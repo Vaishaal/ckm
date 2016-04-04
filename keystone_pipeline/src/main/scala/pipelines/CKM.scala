@@ -1,30 +1,30 @@
 package pipelines
 
-import breeze.stats.distributions._
 import breeze.linalg._
 import breeze.numerics._
+import breeze.stats.distributions._
 import breeze.stats.{mean, median}
 import evaluation.{AugmentedExamplesEvaluator, MulticlassClassifierEvaluator}
-import loaders.{CifarLoader, CifarLoader2, MnistLoader, SmallMnistLoader, ImageNetLoader}
+import loaders._
 import nodes.images._
-import workflow.Transformer
 import nodes.learning._
 import nodes.stats.{StandardScaler, Sampler, SeededCosineRandomFeatures, BroadcastCosineRandomFeatures, CosineRandomFeatures}
 import nodes.util.{Identity, Cacher, ClassLabelIndicatorsFromIntLabels, TopKClassifier, MaxClassifier, VectorCombiner}
+import workflow.Transformer
 
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.commons.math3.random.MersenneTwister
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
 import org.apache.spark.rdd.RDD
+import org.apache.spark.{SparkConf, SparkContext}
 import pipelines.Logging
 import scopt.OptionParser
-import workflow.Pipeline
-import org.apache.log4j.Logger
-import org.apache.log4j.Level
-import org.apache.commons.math3.random.MersenneTwister
 import utils.{Image, MatrixUtils, Stats, ImageMetadata, LabeledImage, RowMajorArrayVectorizedImage, ChannelMajorArrayVectorizedImage}
+import workflow.Pipeline
 
-import scala.reflect.{BeanProperty, ClassTag}
-import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.Constructor
+import org.yaml.snakeyaml.Yaml
+import scala.reflect.{BeanProperty, ClassTag}
 
 import java.io.{File, BufferedWriter, FileWriter}
 
@@ -63,166 +63,189 @@ object CKM extends Serializable with Logging {
       pairwiseMedian(baseFilterMat)
   }
 
+  def augmentData(data: Dataset, conf: CKMConf): Dataset = {
+    /* Augment always blows up data set by 10 (for now)
+     * TODO: Make this more modular?
+     * */
+    val labelAugmenter = new LabelAugmenter[Int](10)
+    val trainAugment =
+      if (conf.augmentType  == "random") {
+        RandomFlipper(0.5).apply(
+          RandomPatcher(10, conf.augmentPatchSize, conf.augmentPatchSize).apply(
+            ImageExtractor(data.train)))
+      } else {
+        CenterCornerPatcher(conf.augmentPatchSize, conf.augmentPatchSize, true).apply(ImageExtractor(data.train))
+      }
+      val testAugment = CenterCornerPatcher(conf.augmentPatchSize, conf.augmentPatchSize, true).apply(ImageExtractor(data.test))
+
+      val trainLabelsAugmented = labelAugmenter.apply(LabelExtractor(data.train))
+      val testLabelsAugmented = labelAugmenter.apply(LabelExtractor(data.test))
+      val augmentedTrain = trainAugment.zip(trainLabelsAugmented).map(x => LabeledImage(x._1,x._2))
+      val augmentedTest = testAugment.zip(testLabelsAugmented).map(x => LabeledImage(x._1,x._2))
+      new Dataset(augmentedTrain, augmentedTest)
+
+  }
+
   def run(sc: SparkContext, conf: CKMConf) {
     var data: Dataset = loadData(sc, conf.dataset)
-    val feature_id = conf.seed + "_" + conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" +
-      conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + conf.filters.mkString("-")
+
+    val augmentString =
+      if (conf.augment) {
+        "Augmented"
+      } else {
+        ""
+      }
+
+    val feature_id = conf.seed + "_" + conf.dataset + augmentString + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" +
+      conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
+    val hadoopConf = sc.hadoopConfiguration
+    val fs = org.apache.hadoop.fs.FileSystem.get(hadoopConf)
+    val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${conf.featureDir}/ckn_${feature_id}_train_features"))
 
 
-    var convKernel: Pipeline[Image, Image] = new Identity()
-    implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(conf.seed)))
-    val gaussian = new Gaussian(0, 1)
-    val uniform = new Uniform(0, 1)
-    var numOutputFeatures = 0
     var trainIds = data.train.zipWithUniqueId.map(x => x._2.toInt)
     var testIds = data.test.zipWithUniqueId.map(x => x._2.toInt)
-    data =
     if (conf.augment) {
-      /* Augment always blows up data set by 10 (for now)
-       * TODO: Make this more modular?
-       * */
-      val labelAugmenter = new LabelAugmenter[Int](10)
-      val trainAugment =
-        if (conf.augmentType  == "random") {
-          RandomFlipper(0.5).apply(
-            RandomPatcher(10, conf.augmentPatchSize, conf.augmentPatchSize).apply(
-              ImageExtractor(data.train)))
+        val labelAugmenter = new LabelAugmenter[Int](10)
+        trainIds = labelAugmenter(trainIds)
+        testIds = labelAugmenter(testIds)
+    }
+
+    val featurized: FeaturizedDataset =
+    if (!exists) {
+      var convKernel: Pipeline[Image, Image] = new Identity()
+      implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(conf.seed)))
+      val gaussian = new Gaussian(0, 1)
+      val uniform = new Uniform(0, 1)
+      var numOutputFeatures = 0
+      data =
+      if (conf.augment) {
+        augmentData(data, conf)
+      } else {
+        data
+      }
+
+      val (xDim, yDim, numChannels) = getInfo(data)
+      println(s"Info ${xDim}, ${yDim}, ${numChannels}")
+      var numInputFeatures = numChannels
+      var currX = xDim
+      var currY = yDim
+
+
+      val startLayer =
+      if (conf.whiten) {
+        // Whiten top level
+        val patchExtractor = new Windower(1, conf.patch_sizes(0))
+                                                .andThen(ImageVectorizer.apply)
+                                                .andThen(new Sampler(100000))
+        val baseFilters = patchExtractor(data.train.map(_.image))
+        val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
+        val whitener = new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
+        val whitenedBase = whitener(baseFilterMat)
+
+        val rows = whitener.whitener.rows
+        val cols = whitener.whitener.cols
+        println(s"Whitener Rows :${rows}, Cols: ${cols}")
+
+        numOutputFeatures = conf.filters(0)
+        val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
+        val seed = conf.seed
+        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
+        if (conf.pool(0) > 1) {
+          var pooler =  new Pooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x))
+          convKernel = convKernel andThen ccap andThen pooler
         } else {
-          CenterCornerPatcher(conf.augmentPatchSize, conf.augmentPatchSize, true).apply(ImageExtractor(data.train))
+          convKernel = convKernel andThen ccap
         }
-        val testAugment = CenterCornerPatcher(conf.augmentPatchSize, conf.augmentPatchSize, true).apply(ImageExtractor(data.test))
+        currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+        currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
 
-        val trainLabelsAugmented = labelAugmenter.apply(LabelExtractor(data.train))
-        val testLabelsAugmented = labelAugmenter.apply(LabelExtractor(data.test))
-        val augmentedTrain = trainAugment.zip(trainLabelsAugmented).map(x => LabeledImage(x._1,x._2))
-        val augmentedTest = testAugment.zip(testLabelsAugmented).map(x => LabeledImage(x._1,x._2))
-        trainIds = labelAugmenter.apply(trainIds)
-        testIds = labelAugmenter.apply(testIds)
-        new Dataset(augmentedTrain, augmentedTest)
-    } else {
-      data
-    }
-
-    val (xDim, yDim, numChannels) = getInfo(data)
-    println(s"Info ${xDim}, ${yDim}, ${numChannels}")
-    var numInputFeatures = numChannels
-    var currX = xDim
-    var currY = yDim
-
-
-    val startLayer =
-    if (conf.whiten) {
-      // Whiten top level
-      val patchExtractor = new Windower(1, conf.patch_sizes(0))
-                                              .andThen(ImageVectorizer.apply)
-                                              .andThen(new Sampler(100000))
-      val baseFilters = patchExtractor(data.train.map(_.image))
-      val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
-      val whitener = new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
-      val whitenedBase = whitener(baseFilterMat)
-
-      val rows = whitener.whitener.rows
-      val cols = whitener.whitener.cols
-      println(s"Whitener Rows :${rows}, Cols: ${cols}")
-
-      numOutputFeatures = conf.filters(0)
-      val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
-      val seed = conf.seed
-      val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
-      if (conf.pool(0) > 1) {
-        var pooler =  new Pooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x))
-        convKernel = convKernel andThen ccap andThen pooler
+        println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
+        numInputFeatures = numOutputFeatures
+        1
       } else {
-        convKernel = convKernel andThen ccap
+        0
       }
-      currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
-      currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
 
-      println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
-      numInputFeatures = numOutputFeatures
-      1
+      for (i <- startLayer until conf.layers) {
+        numOutputFeatures = conf.filters(i)
+        val patchSize = math.pow(conf.patch_sizes(i), 2).toInt
+        val seed = conf.seed + i
+        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, None, conf.whitenerOffset, conf.pool(i), conf.insanity, conf.fastfood)
+
+        if (conf.pool(i) > 1) {
+          var pooler =  new Pooler(conf.poolStride(i), conf.pool(i), identity, (x:DenseVector[Double]) => mean(x))
+          convKernel = convKernel andThen ccap andThen pooler
+        } else {
+          convKernel = convKernel andThen ccap
+        }
+        // (8 - 3 + 1)
+        currX = math.ceil(((currX  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
+        currY = math.ceil(((currY  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
+        println(s"Layer ${i} output, Width: ${currX}, Height: ${currY}")
+        numInputFeatures = numOutputFeatures
+      }
+      val outFeatures = currX * currY * numOutputFeatures
+
+      val meta = data.train.take(1)(0).image.metadata
+      val featurizer1 = ImageExtractor  andThen convKernel
+      val featurizer2 = ImageVectorizer andThen new Cacher[DenseVector[Double]]
+
+      println("OUT FEATURES " +  outFeatures)
+      var featurizer = featurizer1 andThen featurizer2
+      if (conf.cosineSolver) {
+        val randomFeatures = SeededCosineRandomFeatures(outFeatures, conf.cosineFeatures,  conf.cosineGamma, 24) andThen new Cacher[DenseVector[Double]]
+        featurizer = featurizer andThen randomFeatures
+      }
+
+      val dataLoadBegin = System.nanoTime
+      data.train.count()
+      data.test.count()
+      val dataLoadTime = timeElapsed(dataLoadBegin)
+      println(s"Loading data took ${dataLoadTime} secs")
+
+
+      val convTrainBegin = System.nanoTime
+      var XTrain = featurizer(data.train)
+      val count = XTrain.count()
+      val convTrainTime  = timeElapsed(convTrainBegin)
+      println(s"Generating train features took ${convTrainTime} secs")
+
+      val convTestBegin = System.nanoTime
+      var XTest = featurizer(data.test)
+      XTest.count()
+      val convTestTime  = timeElapsed(convTestBegin)
+      println(s"Generating test features took ${convTestTime} secs")
+
+      val numFeatures = XTrain.take(1)(0).size
+      println(s"numFeatures: ${numFeatures}, count: ${count}")
+
+
+      if (conf.saveFeatures) {
+        println("Saving Features")
+        XTrain.map(_.toArray.mkString(",")).zip(LabelExtractor(data.train)).saveAsTextFile(s"${conf.featureDir}ckn_${feature_id}_train_features")
+        XTest.map(_.toArray.mkString(",")).zip(LabelExtractor(data.test)).saveAsTextFile(s"${conf.featureDir}ckn_${feature_id}_test_features")
+      }
+      new FeaturizedDataset(XTrain, XTest, LabelExtractor(data.train), LabelExtractor(data.test))
     } else {
-      0
+      println("Loading pre existing features...")
+      CKMFeatureLoader(sc, conf.featureDir, feature_id)
     }
 
-    for (i <- startLayer until conf.layers) {
-      numOutputFeatures = conf.filters(i)
-      val patchSize = math.pow(conf.patch_sizes(i), 2).toInt
-      val seed = conf.seed + i
-      val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, None, conf.whitenerOffset, conf.pool(i), conf.insanity, conf.fastfood)
-
-      if (conf.pool(i) > 1) {
-        var pooler =  new Pooler(conf.poolStride(i), conf.pool(i), identity, (x:DenseVector[Double]) => mean(x))
-        convKernel = convKernel andThen ccap andThen pooler
-      } else {
-        convKernel = convKernel andThen ccap
-      }
-      // (8 - 3 + 1)
-      currX = math.ceil(((currX  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
-      currY = math.ceil(((currY  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
-      println(s"Layer ${i} output, Width: ${currX}, Height: ${currY}")
-      numInputFeatures = numOutputFeatures
-    }
-    val outFeatures = currX * currY * numOutputFeatures
-
-    val meta = data.train.take(1)(0).image.metadata
-    val featurizer1 = ImageExtractor  andThen convKernel
-    val featurizer2 = ImageVectorizer andThen new Cacher[DenseVector[Double]]
-
-    println("OUT FEATURES " +  outFeatures)
-    var featurizer = featurizer1 andThen featurizer2
-    if (conf.cosineSolver) {
-      val randomFeatures = SeededCosineRandomFeatures(outFeatures, conf.cosineFeatures,  conf.cosineGamma, 24) andThen new Cacher[DenseVector[Double]]
-      featurizer = featurizer andThen randomFeatures
-    }
-
-    val dataLoadBegin = System.nanoTime
-    data.train.count()
-    data.test.count()
-    val dataLoadTime = timeElapsed(dataLoadBegin)
-    println(s"Loading data took ${dataLoadTime} secs")
-
-
-    val convTrainBegin = System.nanoTime
-    var XTrain = featurizer(data.train)
-    val count = XTrain.count()
-    val convTrainTime  = timeElapsed(convTrainBegin)
-    println(s"Generating train features took ${convTrainTime} secs")
-
-    val convTestBegin = System.nanoTime
-    var XTest = featurizer(data.test)
-    XTest.count()
-    val convTestTime  = timeElapsed(convTestBegin)
-    println(s"Generating test features took ${convTestTime} secs")
-
-    val numFeatures = XTrain.take(1)(0).size
-    val blockSize = conf.blockSize
-    println(s"numFeatures: ${numFeatures}, count: ${count}, blockSize: ${blockSize}")
 
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
+    val yTrain = labelVectorizer(featurized.yTrain)
+    val yTest = labelVectorizer(featurized.yTest).map(convert(_, Int).toArray)
+    val XTrain = featurized.XTrain
+    val XTest = featurized.XTest
 
-
-    val yTrain = labelVectorizer(LabelExtractor(data.train))
-    val yTest = labelVectorizer(LabelExtractor(data.test)).map(convert(_, Int).toArray)
-    yTrain.count()
-    yTest.count()
-    println(s"${yTrain} train points")
-
-    if (conf.saveFeatures) {
-      println("Saving Features")
-      XTrain.map(_.toArray.mkString(",")).zip(LabelExtractor(data.train)).saveAsTextFile(s"/ckn_${feature_id}_train_features")
-      XTest.map(_.toArray.mkString(",")).zip(LabelExtractor(data.test)).saveAsTextFile(s"/ckn_${feature_id}_test_features")
-    }
-
-    val avgEigenValue = (XTrain.map((x:DenseVector[Double]) => mean(x :*  x)).sum()/(1.0*count))
-    println(s"Average EigenValue : ${avgEigenValue}")
     if (conf.solve) {
       val model =
       if (conf.solver ==  "kernel" ) {
       val kernelGen = new GaussianKernelGenerator(conf.kernelGamma, XTrain)
        new KernelRidgeRegression(kernelGen, conf.reg, conf.blockSize, conf.numIters, Some(895423832L)).fit(XTrain, yTrain)
      } else {
-      new BlockWeightedLeastSquaresEstimator(blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+      new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
     }
         val trainPredictions = model.apply(XTrain).cache()
         val testPredictions =  model.apply(XTest).cache()
@@ -287,17 +310,17 @@ object CKM extends Serializable with Logging {
         val test = MnistLoader(sc, "/home/eecs/vaishaal/ckm/mldata/mnist", 10, "test").cache
         (train, test)
       } else if (dataset == "mnist_small") {
-        val train = SmallMnistLoader(sc, "/home/eecs/vaishaal/ckm/mldata/mnist_small", 10, "train").cache
-        val test = SmallMnistLoader(sc, "/home/eecs/vaishaal/ckm/mldata/mnist_small", 10, "test").cache
+        val train = SmallMnistLoader(sc, "/Users/vaishaal/research/ckm/mldata/mnist_small", 10, "train").cache
+        val test = SmallMnistLoader(sc, "/Users/vaishaal/research/ckm/mldata/mnist_small", 10, "test").cache
         (train, test)
       } else if (dataset == "imagenet") {
-        val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-train-brewed", 
+        val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-train-brewed",
           "/home/eecs/vaishaal/ckm/mldata/imagenet/imagenet-labels").cache
-        val test = ImageNetLoader(sc, "/user/vaishaal/imagenet-validation-brewed", 
+        val test = ImageNetLoader(sc, "/user/vaishaal/imagenet-validation-brewed",
           "/home/eecs/vaishaal/ckm/mldata/imagenet/imagenet-labels").cache
         (train, test)
       } else if (dataset == "imagenet-small") {
-        val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-train-brewed-small", 
+        val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-train-brewed-small",
           "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
         val test = ImageNetLoader(sc, "/user/vaishaal/imagenet-validation-brewed-small",
           "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
@@ -310,7 +333,7 @@ object CKM extends Serializable with Logging {
       test.checkpoint()
       return new Dataset(train, test)
   }
-  def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9 
+  def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
 
   def getInfo(data: Dataset): (Int, Int, Int) = {
     val image = data.train.take(1)(0).image
@@ -352,6 +375,7 @@ object CKM extends Serializable with Logging {
     @BeanProperty var  augmentPatchSize: Int = 24
     @BeanProperty var  augmentType: String = "random"
     @BeanProperty var  fastfood: Boolean = false
+    @BeanProperty var  featureDir: String = "/"
   }
 
 
