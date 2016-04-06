@@ -43,17 +43,20 @@ object CKMFeatureLoader {
      val testText:RDD[String] = sc.textFile(testPath)
      (trainText, testText)
   } else {
-     val trainText:RDD[String] = sc.textFile(trainPath, partitions.get)
-     val testText:RDD[String] = sc.textFile(testPath, partitions.get)
+     println("1000 partitions")
+     val trainText:RDD[String] = sc.textFile(trainPath, 1000)
+     val testText:RDD[String] = sc.textFile(testPath, 1000)
      (trainText, testText)
   }
 
    val trainPairs: RDD[(DenseVector[Double], Int)] = trainText.map(convertFeature)
    val testPairs: RDD[(DenseVector[Double], Int)] = testText.map(convertFeature)
-   val XTrain = trainPairs.map(_._1)
-   val XTest = testPairs.map(_._1)
-   val yTrain = trainPairs.map(_._2)
-   val yTest = testPairs.map(_._2)
+   val XTrain = trainPairs.map(_._1).cache
+   val XTest = testPairs.map(_._1).cache
+   val yTrain = trainPairs.map(_._2).cache
+   val yTest = testPairs.map(_._2).cache
+   XTrain.count()
+   XTest.count()
    new FeaturizedDataset(XTrain, XTest, yTrain, yTest)
    }
   }

@@ -98,9 +98,12 @@ object CKM extends Serializable with Logging {
 
     val feature_id = conf.seed + "_" + conf.dataset + augmentString + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" +
       conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
+    println(feature_id)
     val hadoopConf = sc.hadoopConfiguration
     val fs = org.apache.hadoop.fs.FileSystem.get(hadoopConf)
-    val exists = fs.exists(new org.apache.hadoop.fs.Path(s"${conf.featureDir}/ckn_${feature_id}_train_features"))
+    val exists = fs.exists(new org.apache.hadoop.fs.Path(s"/${conf.featureDir}/ckn_${feature_id}_train_features"))
+    println("EXISTS " + exists)
+    println(s"/${conf.featureDir}/ckn_${feature_id}_train_features")
 
 
     var trainIds = data.train.zipWithUniqueId.map(x => x._2.toInt)
@@ -229,11 +232,16 @@ object CKM extends Serializable with Logging {
       new FeaturizedDataset(XTrain, XTest, LabelExtractor(data.train), LabelExtractor(data.test))
     } else {
       println("Loading pre existing features...")
-      CKMFeatureLoader(sc, conf.featureDir, feature_id)
+      CKMFeatureLoader(sc, "/" + conf.featureDir, feature_id,  Some(conf.numClasses))
     }
 
+    trainIds = featurized.XTrain.zipWithUniqueId.map(x => x._2.toInt)
+    testIds = featurized.XTest.zipWithUniqueId.map(x => x._2.toInt)
 
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
+    println(conf.numClasses)
+    println("VECTORIZING LABELS")
+
     val yTrain = labelVectorizer(featurized.yTrain)
     val yTest = labelVectorizer(featurized.yTest).map(convert(_, Int).toArray)
     val XTrain = featurized.XTrain
@@ -255,20 +263,20 @@ object CKM extends Serializable with Logging {
 
         val (trainEval, testEval) =
         if (!conf.augment) {
-          val trainEval = MulticlassClassifierEvaluator(yTrainPred, LabelExtractor(data.train), conf.numClasses)
-          val testEval = MulticlassClassifierEvaluator(yTestPred, LabelExtractor(data.test), conf.numClasses)
+          val trainEval = MulticlassClassifierEvaluator(yTrainPred, featurized.yTrain,   conf.numClasses)
+          val testEval = MulticlassClassifierEvaluator(yTestPred, featurized.yTest, conf.numClasses)
           (trainEval.totalError, testEval.totalError)
         } else {
             val trainEval = AugmentedExamplesEvaluator(
-              trainIds, trainPredictions, LabelExtractor(data.train), conf.numClasses)
+              trainIds, trainPredictions, featurized.yTrain, conf.numClasses)
             val testEval = AugmentedExamplesEvaluator(
-              testIds, testPredictions, LabelExtractor(data.test), conf.numClasses)
+              testIds, testPredictions, featurized.yTest, conf.numClasses)
             (trainEval.totalError, testEval.totalError)
         }
 
         if (conf.numClasses >= 5) {
 
-          val testLabels = labelVectorizer(LabelExtractor(data.test))
+          val testLabels = labelVectorizer(featurized.yTest)
           val top5Predicted = TopKClassifier(5)(testPredictions)
           val top1Actual = TopKClassifier(1)(testLabels)
 
@@ -281,7 +289,7 @@ object CKM extends Serializable with Logging {
         val out_train = new BufferedWriter(new FileWriter("/tmp/ckm_train_results"))
         val out_test = new BufferedWriter(new FileWriter("/tmp/ckm_test_results"))
 
-        trainPredictions.zip(LabelExtractor(data.train).zip(trainIds)).map {
+        trainPredictions.zip(featurized.yTrain.zip(trainIds)).map {
             case (weights, (label, id)) => s"$id,$label," + weights.toArray.mkString(",")
           }.collect().foreach{x =>
             out_train.write(x)
@@ -289,7 +297,7 @@ object CKM extends Serializable with Logging {
           }
           out_train.close()
 
-        testPredictions.zip(LabelExtractor(data.test).zip(testIds)).map {
+        testPredictions.zip(featurized.yTest.zip(testIds)).map {
             case (weights, (label, id)) => s"$id,$label," + weights.toArray.mkString(",")
           }.collect().foreach{x =>
             out_test.write(x)
