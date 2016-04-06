@@ -87,156 +87,18 @@ object CKM extends Serializable with Logging {
   }
 
   def run(sc: SparkContext, conf: CKMConf) {
-    var data: Dataset = loadData(sc, conf.dataset)
 
-    val augmentString =
-      if (conf.augment) {
-        "Augmented"
-      } else {
-        ""
-      }
-
-    val feature_id = conf.seed + "_" + conf.dataset + augmentString + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" +
+    val feature_id = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" +
       conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
     println(feature_id)
     val hadoopConf = sc.hadoopConfiguration
     val fs = org.apache.hadoop.fs.FileSystem.get(hadoopConf)
-    val exists = fs.exists(new org.apache.hadoop.fs.Path(s"/${conf.featureDir}/ckn_${feature_id}_train_features"))
-    println("EXISTS " + exists)
-    println(s"/${conf.featureDir}/ckn_${feature_id}_train_features")
 
 
-    var trainIds = data.train.zipWithUniqueId.map(x => x._2.toInt)
-    var testIds = data.test.zipWithUniqueId.map(x => x._2.toInt)
-    if (conf.augment) {
-        val labelAugmenter = new LabelAugmenter[Int](10)
-        trainIds = labelAugmenter(trainIds)
-        testIds = labelAugmenter(testIds)
-    }
+    val featurized: FeaturizedDataset = CKMFeatureLoader(sc, conf.featureDir, feature_id,  Some(conf.numClasses))
 
-    val featurized: FeaturizedDataset =
-    if (!exists) {
-      var convKernel: Pipeline[Image, Image] = new Identity()
-      implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(conf.seed)))
-      val gaussian = new Gaussian(0, 1)
-      val uniform = new Uniform(0, 1)
-      var numOutputFeatures = 0
-      data =
-      if (conf.augment) {
-        augmentData(data, conf)
-      } else {
-        data
-      }
-
-      val (xDim, yDim, numChannels) = getInfo(data)
-      println(s"Info ${xDim}, ${yDim}, ${numChannels}")
-      var numInputFeatures = numChannels
-      var currX = xDim
-      var currY = yDim
-
-
-      val startLayer =
-      if (conf.whiten) {
-        // Whiten top level
-        val patchExtractor = new Windower(1, conf.patch_sizes(0))
-                                                .andThen(ImageVectorizer.apply)
-                                                .andThen(new Sampler(100000))
-        val baseFilters = patchExtractor(data.train.map(_.image))
-        val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
-        val whitener = new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
-        val whitenedBase = whitener(baseFilterMat)
-
-        val rows = whitener.whitener.rows
-        val cols = whitener.whitener.cols
-        println(s"Whitener Rows :${rows}, Cols: ${cols}")
-
-        numOutputFeatures = conf.filters(0)
-        val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
-        val seed = conf.seed
-        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
-        if (conf.pool(0) > 1) {
-          var pooler =  new Pooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x))
-          convKernel = convKernel andThen ccap andThen pooler
-        } else {
-          convKernel = convKernel andThen ccap
-        }
-        currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
-        currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
-
-        println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
-        numInputFeatures = numOutputFeatures
-        1
-      } else {
-        0
-      }
-
-      for (i <- startLayer until conf.layers) {
-        numOutputFeatures = conf.filters(i)
-        val patchSize = math.pow(conf.patch_sizes(i), 2).toInt
-        val seed = conf.seed + i
-        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, None, conf.whitenerOffset, conf.pool(i), conf.insanity, conf.fastfood)
-
-        if (conf.pool(i) > 1) {
-          var pooler =  new Pooler(conf.poolStride(i), conf.pool(i), identity, (x:DenseVector[Double]) => mean(x))
-          convKernel = convKernel andThen ccap andThen pooler
-        } else {
-          convKernel = convKernel andThen ccap
-        }
-        // (8 - 3 + 1)
-        currX = math.ceil(((currX  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
-        currY = math.ceil(((currY  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
-        println(s"Layer ${i} output, Width: ${currX}, Height: ${currY}")
-        numInputFeatures = numOutputFeatures
-      }
-      val outFeatures = currX * currY * numOutputFeatures
-
-      val meta = data.train.take(1)(0).image.metadata
-      val featurizer1 = ImageExtractor  andThen convKernel
-      val featurizer2 = ImageVectorizer andThen new Cacher[DenseVector[Double]]
-
-      println("OUT FEATURES " +  outFeatures)
-      var featurizer = featurizer1 andThen featurizer2
-      if (conf.cosineSolver) {
-        val randomFeatures = SeededCosineRandomFeatures(outFeatures, conf.cosineFeatures,  conf.cosineGamma, 24) andThen new Cacher[DenseVector[Double]]
-        featurizer = featurizer andThen randomFeatures
-      }
-
-      val dataLoadBegin = System.nanoTime
-      data.train.count()
-      data.test.count()
-      val dataLoadTime = timeElapsed(dataLoadBegin)
-      println(s"Loading data took ${dataLoadTime} secs")
-
-
-      val convTrainBegin = System.nanoTime
-      var XTrain = featurizer(data.train)
-      val count = XTrain.count()
-      val convTrainTime  = timeElapsed(convTrainBegin)
-      println(s"Generating train features took ${convTrainTime} secs")
-
-      val convTestBegin = System.nanoTime
-      var XTest = featurizer(data.test)
-      XTest.count()
-      val convTestTime  = timeElapsed(convTestBegin)
-      println(s"Generating test features took ${convTestTime} secs")
-
-      val numFeatures = XTrain.take(1)(0).size
-      println(s"numFeatures: ${numFeatures}, count: ${count}")
-
-
-      if (conf.saveFeatures) {
-        println("Saving Features")
-        XTrain.map(_.toArray.mkString(",")).zip(LabelExtractor(data.train)).saveAsTextFile(s"${conf.featureDir}ckn_${feature_id}_train_features")
-        XTest.map(_.toArray.mkString(",")).zip(LabelExtractor(data.test)).saveAsTextFile(s"${conf.featureDir}ckn_${feature_id}_test_features")
-      }
-      new FeaturizedDataset(XTrain, XTest, LabelExtractor(data.train), LabelExtractor(data.test))
-    } else {
-      println("Loading pre existing features...")
-      CKMFeatureLoader(sc, "/" + conf.featureDir, feature_id,  Some(conf.numClasses))
-    }
-
-    trainIds = featurized.XTrain.zipWithUniqueId.map(x => x._2.toInt)
-    testIds = featurized.XTest.zipWithUniqueId.map(x => x._2.toInt)
+    val trainIds = featurized.XTrain.zipWithUniqueId.map(x => x._2.toInt)
+    val testIds = featurized.XTest.zipWithUniqueId.map(x => x._2.toInt)
 
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
     println(conf.numClasses)
@@ -383,9 +245,8 @@ object CKM extends Serializable with Logging {
     @BeanProperty var  augmentPatchSize: Int = 24
     @BeanProperty var  augmentType: String = "random"
     @BeanProperty var  fastfood: Boolean = false
-    @BeanProperty var  featureDir: String = "/"
+    @BeanProperty var  featureDir: String = "s3n://ckmfeatures/"
   }
-
 
   case class Dataset(
     val train: RDD[LabeledImage],
@@ -411,6 +272,8 @@ object CKM extends Serializable with Logging {
       Logger.getLogger("akka").setLevel(Level.WARN)
       conf.setIfMissing("spark.master", "local[16]")
       conf.set("spark.driver.maxResultSize", "0")
+      conf.set("spark.hadoop.fs.s3n.awsSecretAccessKey", "pcJoXFSbsDBHFW7jIxZbeudetLgx4WgqqT/OV85J")
+      conf.set("spark.hadoop.fs.s3n.awsAccessKeyId", "AKIAJ5XDCFWZOHFC4ESA")
       conf.setAppName(appConfig.expid)
       val sc = new SparkContext(conf)
       sc.setCheckpointDir(appConfig.checkpointDir)

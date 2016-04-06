@@ -22,7 +22,7 @@ fi
 
 echo "automatically setting OMP_NUM_THREADS=$OMP_NUM_THREADS"
 
-ASSEMBLYJAR="/data/jonas/suncast/suncast/pipeline/target/scala-2.10/ckm-assembly-0.1-deps.jar"
+ASSEMBLYJAR="/mnt/ckm/keystone_pipeline/target/scala-2.10/ckm-assembly-0.1-deps.jar"
 
 
 if [[ -z "$SPARK_HOME" ]]; then
@@ -41,19 +41,20 @@ else
   $SPARK_HOME/bin/spark-submit \
     --deploy-mode client \
     --class $CLASS \
-    --master spark://$SPARK_MASTER_IP:7077 \
+    --master spark://ec2-52-37-88-8.us-west-2.compute.amazonaws.com:7077 \
     --driver-class-path $JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
     --conf spark.executor.extraClassPath=$JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
-    --conf spark.executor.cores=$SPARK_EXECUTOR_CORES \
-    --conf spark.hadoop.fs.s3a.access.key=$AWS_ACCESS_KEY_ID \
-    --conf spark.hadoop.fs.s3a.secret.key=$AWS_SECRET_ACCESS_KEY \
-    --conf spark.hadoop.fs.s3n.awsAccessKeyId=$AWS_ACCESS_KEY_ID \
-    --conf spark.hadoop.fs.s3n.awsSecretAccessKey=$AWS_SECRET_ACCESS_KEY \
-    --driver-memory $KEYSTONE_MEM \
-    --conf spark.executorEnv.OMP_NUM_THREADS=$OMP_NUM_THREADS\
+    --num-executors 64 \
+    --conf spark.executor.cores=4\
+    --conf spark.hadoop.fs.s3a.secret.key="pcJoXFSbsDBHFW7jIxZbeudetLgx4WgqqT/OV85J" \
+    --conf spark.hadoop.fs.s3a.access.key="AKIAJ5XDCFWZOHFC4ESA" \
+    --conf spark.hadoop.fs.s3n.awsSecretAccessKeyId="pcJoXFSbsDBHFW7jIxZbeudetLgx4WgqqT/OV85J"\
+    --conf spark.hadoop.fs.s3n.awsAccessKey="AKIAJ5XDCFWZOHFC4ESA" \
+    --driver-memory 100g \
+    --conf spark.executorEnv.OMP_NUM_THREADS=1\
     --conf spark.driver.maxResultSize=0 \
-    --conf spark.eventLog.dir=/media/ephemeral0 \
-    --conf spark.executor.memory=$KEYSTONE_MEM \
+    --conf spark.executor.memory=100g \
+    --jars $ASSEMBLYJAR \
     $JARFILE \
     "$@"
 fi

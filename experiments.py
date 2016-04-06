@@ -5,7 +5,6 @@ from itertools import groupby
 
 import features_pb2
 from pandas import DataFrame
-from ckm import *
 import glob 
 
 import logging
@@ -15,11 +14,6 @@ import subprocess
 
 from tabulate import tabulate
 import time
-
-from softmax import *
-
-from sklearn import metrics
-from sklearn.linear_model import SGDClassifier
 
 '''
 Driver for Convolutional Kernel Machine experiments
@@ -59,28 +53,7 @@ def flatten_dict(d, parent_key='', sep='_'):
 
 
 def python_run(exp):
-    if (exp.get("seed") == None):
-        exp["seed"] = int(random.random*(2*32))
-    start_time = time.time()
-    dataset = exp["dataset"]
-    seed = exp["seed"]
-    verbose = exp["verbose"]
-    center = exp.get("center")
-    (X_train, y_train), (X_test, y_test) = load_data(dataset, center)
-    if (verbose):
-        print "Data loaded Train shape: {0}, Test Shape: {1}, Train Labels shape: {2}, \
-        Test Labels shape {3}".format(X_train.shape, X_test.shape, y_train.shape, y_test.shape)
-    X_train_lift, X_test_lift = gen_features(exp, X_train, X_test, seed)
-    if (verbose):
-        print "Data Featurized Train shape: {0}, Test Shape: {1}, Train Labels shape: {2}, \
-        Test Labels shape {3}".format(X_train_lift.shape, X_test_lift.shape, y_train.shape, y_test.shape)
-
-    y_train_pred, y_test_pred = solve(exp, X_train_lift, y_train, X_test_lift, y_test, seed)
-    runtime =  time.time() - start_time
-
-    results = compute_metrics(exp, y_train, y_train_pred, y_test, y_test_pred)
-    results.insert(len(results.columns), "runtime",  runtime)
-    return results
+    pass
 
 def scala_run(exp, yaml_path):
     start_time = time.time()
@@ -96,7 +69,7 @@ def scala_run(exp, yaml_path):
     # if os.path.exists(logfile) and output_sanity_check:
     #     raise ValueError("output dir has logfile, should be empty")
     pipelineClass="pipelines.CKM"
-    pipelineJar = "/home/eecs/vaishaal/ckm/keystone_pipeline/target/scala-2.10/ckm-assembly-0.1.jar"
+    pipelineJar = "/mnt/ckm/keystone_pipeline/target/scala-2.10/ckm-assembly-0.1.jar"
     if not os.path.exists(pipelineJar):
         raise ValueError("Cannot find pipeline jar")
 
@@ -233,14 +206,7 @@ def scp_features_to_c78(fname_train, fname_test, path="/work/vaishaal"):
 
 
 def compute_metrics(exp, y_train, y_train_pred, y_test, y_test_pred):
-    exp_flatten = flatten_dict(exp)
-    exp_flatten = dict(map(lambda x: (x[0], [str(x[1])]), exp_flatten.items()))
-    df = DataFrame.from_dict(exp_flatten)
-    train_acc = metrics.accuracy_score(y_train, y_train_pred)
-    test_acc = metrics.accuracy_score(y_test, y_test_pred)
-    df.insert(len(df.columns), "train_acc", train_acc)
-    df.insert(len(df.columns), "test_acc", test_acc)
-    return df
+    return None
 
 def compute_top5_acc(y_train, y_train_weights, y_test, y_test_weights):
     top5_train = y_train_weights.argsort(axis=1)[:,-5:]
@@ -269,21 +235,6 @@ def build_ckm(exp, seed):
             X_train, X_test =  ckm_apply(X_train, X_test, patch_shape, bandwidth[i], filters[i], pool=pool[i], random_state=(seed+i), whiten=whiten, numChannels=channels)
         return X_train, X_test
     return ckm_run
-
-def solve(exp, X_train, y_train, X_test, y_test, seed):
-    X_train = X_train.reshape(X_train.shape[0], -1)
-    X_test = X_test.reshape(X_test.shape[0], -1)
-    loss = exp["loss"]
-    reg = exp["reg"]
-    verbose = exp["verbose"]
-    if (loss == "softmax"):
-        y_train_pred, y_test_pred = softmax_gn(X_train, y_train, X_test, y_test, reg, verbose=True)
-    else:
-        clf = SGDClassifier(loss=loss, random_state=RANDOM_STATE, alpha=reg, verbose=int(verbose))
-        clf.fit(X_train, y_train)
-        y_train_pred = clf.predict(X_train)
-        y_test_pred = clf.predict(X_test)
-    return y_train_pred, y_test_pred
 
 def parse_experiment(config_file):
     return load(open(config_file))
