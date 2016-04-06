@@ -257,34 +257,37 @@ object CKM extends Serializable with Logging {
     }
         val trainPredictions = model.apply(XTrain).cache()
         val testPredictions =  model.apply(XTest).cache()
+        val testLabels = labelVectorizer(featurized.yTest)
+        val trainLabels = labelVectorizer(featurized.yTrain)
 
         val yTrainPred = MaxClassifier.apply(trainPredictions)
         val yTestPred =  MaxClassifier.apply(testPredictions)
 
-        val (trainEval, testEval) =
-        if (!conf.augment) {
-          val trainEval = MulticlassClassifierEvaluator(yTrainPred, featurized.yTrain,   conf.numClasses)
-          val testEval = MulticlassClassifierEvaluator(yTestPred, featurized.yTest, conf.numClasses)
-          (trainEval.totalError, testEval.totalError)
-        } else {
+        val top1Actual = TopKClassifier(1)(testLabels)
+        val top1TrainActual = TopKClassifier(1)(trainLabels)
+
+          if (!conf.augment) {
+            if (conf.numClasses >= 5) {
+              val top5Predicted = TopKClassifier(5)(testPredictions)
+              println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5Predicted, top1Actual, testPredictions.count())) + "%")
+              val top5TrainPredicted = TopKClassifier(5)(trainPredictions)
+              println("Top 5 train acc is " + (100 - Stats.getErrPercent(top5TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+            }
+
+            val top1Predicted = TopKClassifier(1)(testPredictions)
+            val top1TrainPredicted = TopKClassifier(1)(trainPredictions)
+            println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1Predicted, top1Actual, testPredictions.count())) + "%")
+            println("Top 1 train acc is " + (100 - Stats.getErrPercent(top1TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+          } else {
             val trainEval = AugmentedExamplesEvaluator(
               trainIds, trainPredictions, featurized.yTrain, conf.numClasses)
             val testEval = AugmentedExamplesEvaluator(
               testIds, testPredictions, featurized.yTest, conf.numClasses)
-            (trainEval.totalError, testEval.totalError)
-        }
+            println(s"total training accuracy ${1 - trainEval.totalError}")
+            println(s"total testing accuracy ${1 - testEval.totalError}")
+          }
 
-        if (conf.numClasses >= 5) {
 
-          val testLabels = labelVectorizer(featurized.yTest)
-          val top5Predicted = TopKClassifier(5)(testPredictions)
-          val top1Actual = TopKClassifier(1)(testLabels)
-
-           println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5Predicted, top1Actual, testPredictions.count())) + "%")
-        }
-
-        println(s"total training accuracy ${1 - trainEval}")
-        println(s"total testing accuracy ${1 - testEval}")
 
         val out_train = new BufferedWriter(new FileWriter("/tmp/ckm_train_results"))
         val out_test = new BufferedWriter(new FileWriter("/tmp/ckm_test_results"))

@@ -28,7 +28,7 @@ object CKMFeatureLoader {
      /* Maintain backward compatibility with old featurizations */
      val splitX = featureString.replace("(","").replace(")","").split(",")
      val y = splitX.last.toInt
-     val x = DenseVector(splitX.slice(0,splitX.size).map(_.toDouble))
+     val x = DenseVector(splitX.slice(0,splitX.size - 1).map(_.toDouble))
      (x,y)
   }
 
