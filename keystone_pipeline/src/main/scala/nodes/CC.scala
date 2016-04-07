@@ -8,6 +8,7 @@ import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import pipelines._
 import utils.{ChannelMajorArrayVectorizedImage, ImageMetadata, _}
+import utils.external.NativeRoutines
 import workflow.Transformer
 import breeze.stats.distributions._
 import org.apache.commons.math3.random.MersenneTwister

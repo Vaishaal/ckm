@@ -1,10 +1,14 @@
 package pipelines
 
 import utils.{ImageMetadata, ColumnMajorArrayVectorizedImage}
-import breeze.linalg._
-import breeze.numerics._
 import nodes.images.{SymmetricRectifier, Pooler}
 import nodes.images.{MyPooler, MyConvolver, Convolver, CCaP}
+
+import breeze.linalg._
+import breeze.stats._
+import utils._
+
+import scala.util.Random
 
 
 /*

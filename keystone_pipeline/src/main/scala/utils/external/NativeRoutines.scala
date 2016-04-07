@@ -16,4 +16,7 @@ class NativeRoutines extends Serializable {
 
   @native
   def fwht(in: Array[Double], length: Int) : Array[Double]
+
+  @native
+  def cosine(in: Float) : Float
 }
