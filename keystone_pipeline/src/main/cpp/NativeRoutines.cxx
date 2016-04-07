@@ -21,6 +21,14 @@ static inline jint imageToVectorCoords(jint x, jint y, jint c, jint yDim, jint x
   return y + x * yDim + c * yDim * xDim;
 }
 
+JNIEXPORT jfloat JNICALL Java_utils_external_NativeRoutines_cosine(
+    JNIEnv* env,
+    jobject obj,
+    jfloat input)
+{
+  return cos(input);
+}
+
 JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_fwht(
     JNIEnv* env,
     jobject obj,
