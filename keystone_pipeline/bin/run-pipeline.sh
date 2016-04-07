@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Figure out where we are.
 FWDIR="$(cd `dirname $0`; pwd)"
 
@@ -41,15 +40,10 @@ else
   $SPARK_HOME/bin/spark-submit \
     --deploy-mode client \
     --class $CLASS \
-    --master spark://ec2-52-37-88-8.us-west-2.compute.amazonaws.com:7077 \
-    --driver-class-path $JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
-    --conf spark.executor.extraClassPath=$JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
-    --num-executors 64 \
-    --conf spark.executor.cores=4\
-    --conf spark.hadoop.fs.s3a.secret.key="pcJoXFSbsDBHFW7jIxZbeudetLgx4WgqqT/OV85J" \
-    --conf spark.hadoop.fs.s3a.access.key="AKIAJ5XDCFWZOHFC4ESA" \
-    --conf spark.hadoop.fs.s3n.awsSecretAccessKeyId="pcJoXFSbsDBHFW7jIxZbeudetLgx4WgqqT/OV85J"\
-    --conf spark.hadoop.fs.s3n.awsAccessKey="AKIAJ5XDCFWZOHFC4ESA" \
+    --driver-class-path $JARFILE:$ASSEMBLYJAR \
+    --conf spark.executor.extraClassPath=$JARFILE:$ASSEMBLYJAR \
+    --conf spark.executor.cores=16 \
+    --conf spark.hadoop.mapred.min.split.size=2000000000 \
     --driver-memory 100g \
     --conf spark.executorEnv.OMP_NUM_THREADS=1\
     --conf spark.driver.maxResultSize=0 \

@@ -87,7 +87,7 @@ object CKM extends Serializable with Logging {
   }
 
   def run(sc: SparkContext, conf: CKMConf) {
-
+    println("CHANGED CHANGE CHANGE CKM")
     val feature_id = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" +
       conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
     println(feature_id)
