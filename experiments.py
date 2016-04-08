@@ -15,6 +15,9 @@ import subprocess
 
 from tabulate import tabulate
 import time
+import re
+import StringIO
+import csv
 
 from softmax import *
 
@@ -192,21 +195,29 @@ def load_all_features_from_dir(dirname):
     files = glob.glob(dirname + "/part*")
     all_features = []
     all_labels = []
-    i = 1
+    i = 0
     for f in files:
         print "Part {0}".format(i)
         features, labels = load_features_from_text(f)
         all_features.extend(features)
         all_labels.extend(labels)
         i += 1
-    return np.array(all_features), np.array(all_labels)
+    return np.vstack(all_features), np.hstack(all_labels)
 
 
 def load_features_from_text(fname):
-    x_tuples = open(fname).readlines()
-    x = map(lambda x: (map(lambda y: float(y), (x[1:-2].split(",")[:-1])), float(x[1:-2].split(",")[-1])), x_tuples)
-    features, labels = zip(*x)
-    return features, labels
+    ts = time.time()
+    with open(fname) as open_file:
+        csv_string = open_file.read()
+    csvstring_stripped = re.sub('\(|\)', '', csv_string)
+    f = StringIO.StringIO(csvstring_stripped)
+    reader = csv.reader(f, delimiter=',')
+    lst = list(reader)
+    array = np.array(lst)
+    Y = array[:,-1].astype('int32')
+    X = array[:,:-1].astype('float64')
+    print "Loading file took " + str(time.time() - ts)
+    return X, Y
 
 def save_text_features_as_npz(fname_train, fname_test):
     print("Loading Train Features")
