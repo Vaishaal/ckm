@@ -10,6 +10,7 @@ import nodes.images._
 import nodes.learning._
 import nodes.stats.{StandardScaler, Sampler, SeededCosineRandomFeatures, BroadcastCosineRandomFeatures, CosineRandomFeatures}
 import nodes.util.{Identity, Cacher, ClassLabelIndicatorsFromIntLabels, TopKClassifier, MaxClassifier, VectorCombiner}
+import org.apache.spark.Accumulator
 import workflow.Transformer
 
 import org.apache.commons.math3.random.MersenneTwister
@@ -134,9 +135,11 @@ object CKM extends Serializable with Logging {
       var currX = xDim
       var currY = yDim
 
-
+      var accs: List[Accumulator[Double]] = List()
+      var pool_accum = sc.accumulator(0.0)
       val startLayer =
       if (conf.whiten) {
+        val start = System.nanoTime()
         // Whiten top level
         val patchExtractor = new Windower(1, conf.patch_sizes(0))
                                                 .andThen(ImageVectorizer.apply)
@@ -149,13 +152,16 @@ object CKM extends Serializable with Logging {
         val rows = whitener.whitener.rows
         val cols = whitener.whitener.cols
         println(s"Whitener Rows :${rows}, Cols: ${cols}")
+        println(s"Whitening took ${timeElapsed(start)} secs")
 
         numOutputFeatures = conf.filters(0)
         val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
         val seed = conf.seed
-        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
+        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
+        accs =  ccap.accs
         if (conf.pool(0) > 1) {
-          var pooler =  new Pooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x))
+          var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
+          pool_accum = pooler.pooling_accum
           convKernel = convKernel andThen ccap andThen pooler
         } else {
           convKernel = convKernel andThen ccap
@@ -174,10 +180,10 @@ object CKM extends Serializable with Logging {
         numOutputFeatures = conf.filters(i)
         val patchSize = math.pow(conf.patch_sizes(i), 2).toInt
         val seed = conf.seed + i
-        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, None, conf.whitenerOffset, conf.pool(i), conf.insanity, conf.fastfood)
+        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(i), conf.insanity, conf.fastfood)
 
         if (conf.pool(i) > 1) {
-          var pooler =  new Pooler(conf.poolStride(i), conf.pool(i), identity, (x:DenseVector[Double]) => mean(x))
+          var pooler =  new MyPooler(conf.poolStride(i), conf.pool(i), identity, (x:DenseVector[Double]) => mean(x), sc)
           convKernel = convKernel andThen ccap andThen pooler
         } else {
           convKernel = convKernel andThen ccap
@@ -210,18 +216,20 @@ object CKM extends Serializable with Logging {
 
       val convTrainBegin = System.nanoTime
       var XTrain = featurizer(data.train)
-      val count = XTrain.count()
+      val trainCount = XTrain.count()
       val convTrainTime  = timeElapsed(convTrainBegin)
       println(s"Generating train features took ${convTrainTime} secs")
 
       val convTestBegin = System.nanoTime
       var XTest = featurizer(data.test)
-      XTest.count()
+      val testCount = XTest.count()
       val convTestTime  = timeElapsed(convTestBegin)
       println(s"Generating test features took ${convTestTime} secs")
-
+      println(s"Per image metrics:")
+      accs.map(x => println(x.name.get + ":" + x.value/(trainCount + testCount)))
+      println(pool_accum.name.get + ":" + pool_accum.value/(trainCount + testCount))
       val numFeatures = XTrain.take(1)(0).size
-      println(s"numFeatures: ${numFeatures}, count: ${count}")
+      println(s"numFeatures: ${numFeatures}, count: ${trainCount}")
 
 
       if (conf.saveFeatures) {
@@ -336,7 +344,7 @@ object CKM extends Serializable with Logging {
         val test = ImageNetLoader(sc, "/user/vaishaal/imagenet-validation-brewed-small",
           "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
 
-        (train.repartition(200), test.repartition(200))
+        (train.repartition(384), test.repartition(384))
       } else {
         throw new IllegalArgumentException("Unknown Dataset")
       }
