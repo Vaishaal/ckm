@@ -13,7 +13,7 @@ import utils.external.NativeRoutines
 import workflow.Transformer
 import breeze.stats.distributions._
 import org.apache.commons.math3.random.MersenneTwister
-import org.apache.commons.math3.util.FastMath
+import net.jafama.FastMath
 
 /**
  * Convolves images with a bank of convolution filters. Convolution filters must be square.
@@ -155,8 +155,7 @@ object CC {
 
     val normStart = System.nanoTime()
     whitenedImage :+= whitenerOffset
-    val patchNorms = norm(whitenedImage, Axis._1)
-    whitenedImage(::, *) :/= patchNorms
+    l2Normalize(whitenedImage)
     accs(2) += timeElapsed(normStart)
     var convRes:DenseMatrix[Double] =
     fastfood.map { ff =>
@@ -167,22 +166,24 @@ object CC {
       val convRes = whitenedImage * (new DenseMatrix(out, in, convolutions)).t
       accs(3) += timeElapsed(dgemmStart)
       val phaseStart = System.nanoTime()
-      convRes(*, ::) :+= phase
       accs(4) += timeElapsed(phaseStart)
 
-      val convRes_data = convRes.data
-      println("COSINE SIZE " + convRes_data.size)
       val cosStart = System.nanoTime()
       var j = 0
-      while (j < convRes_data.size) {
-          convRes_data(j) = FastMath.cos(convRes_data(j))
-          j += 1
+      while (j < convRes.cols) {
+        var i = 0
+        val pj = phase(j)
+        while (i < convRes.rows) {
+          convRes(i,j) = FastMath.cos(convRes(i,j) + pj)
+          i += 1
+        }
+        j += 1
       }
       accs(5) += timeElapsed(cosStart)
 
       if (insanity) {
         val insanityStart = System.nanoTime()
-        convRes(::,*) :*= patchNorms
+        //convRes(::,*) :*= patchNorms
         accs(6) += timeElapsed(insanityStart)
       }
       convRes
@@ -195,6 +196,25 @@ object CC {
     accs(7) += timeElapsed(imCreateStart)
     res
   }
+
+def l2Normalize(X: DenseMatrix[Double]) {
+  var i = 0;
+  while (i < X.rows) {
+    var j = 0
+    var norm = 0.0;
+    while (j < X.cols) {
+      norm += X(i,j)*X(i,j)
+      j += 1
+    }
+    norm = FastMath.sqrt(norm)
+    while (j < X.cols) {
+      X(i,j) = X(i,j)/norm
+      j += 1
+    }
+    i += 1
+  }
+}
+
 
 def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
 

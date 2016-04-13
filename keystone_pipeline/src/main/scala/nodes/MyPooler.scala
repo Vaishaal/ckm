@@ -42,10 +42,10 @@ class MyPooler(
     val patch = new Array[Double]( numPoolsX * numPoolsY * numChannels)
 
     // Start at strideStart in (x, y) and
-    for (x <- strideStart until xDim by stride;
-         y <- strideStart until yDim by stride) {
-      // Extract the pool. Then apply the pixel and pool functions
-
+    var x = strideStart
+    while (x < xDim) {
+      var y = strideStart
+      while (y < yDim) {
       val pool = DenseVector.zeros[Double](poolSize * poolSize)
       val startX = x - poolSize/2
       val endX = math.min(x + poolSize/2, xDim)
@@ -68,6 +68,9 @@ class MyPooler(
           (y - strideStart)/stride * numPoolsX * numChannels) = poolFunction(pool)
         c = c + 1
       }
+      y += stride
+    }
+    x += stride
     }
     val out = ChannelMajorArrayVectorizedImage(patch, ImageMetadata(numPoolsX, numPoolsY, numChannels))
     pooling_accum += timeElapsed(poolStart)
