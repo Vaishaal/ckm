@@ -27,7 +27,8 @@ libraryDependencies ++= Seq(
   "io.scif" % "scifio" % "0.27.0",
   "gov.nasa.gsfc.heasarc" % "nom-tam-fits" % "1.14.0-SNAPSHOT",
   "net.imagej" % "imagej" % "2.0.0-rc-42" exclude("io.scif", "scifio"),
-  "com.google.protobuf" % "protobuf-java" % "2.4.1"
+  "com.google.protobuf" % "protobuf-java" % "2.4.1",
+  "net.jafama" % "jafama" % "2.1.0"
 )
 
 

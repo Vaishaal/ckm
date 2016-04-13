@@ -139,7 +139,7 @@ object CC {
 
 
     val whiteningStart = System.nanoTime()
-    val whitenedImage: DenseMatrix[Double] =
+    var whitenedImage: DenseMatrix[Double] =
     whitener match  {
       case None => {
         imgMat
@@ -154,8 +154,8 @@ object CC {
     accs(1) += timeElapsed(whiteningStart)
 
     val normStart = System.nanoTime()
-    whitenedImage :+= whitenerOffset
-    l2Normalize(whitenedImage)
+    val patchNorms = l2Normalize(whitenedImage, whitenerOffset)
+
     accs(2) += timeElapsed(normStart)
     var convRes:DenseMatrix[Double] =
     fastfood.map { ff =>
@@ -197,16 +197,35 @@ object CC {
     res
   }
 
-def l2Normalize(X: DenseMatrix[Double]) {
+def l2Norms(X: DenseMatrix[Double], offset: Double): DenseVector[Double] = {
+  var i = 0;
+  val out = DenseVector.zeros[Double](X.rows)
+  while (i < X.rows) {
+    var j = 0
+    var norm = 0.0;
+    while (j < X.cols) {
+      val xij = X(i,j) + offset
+      norm += xij * xij
+      j += 1
+    }
+    out(i) = FastMath.sqrt(norm)
+    i += 1
+  }
+  out
+}
+
+def l2Normalize(X: DenseMatrix[Double], offset: Double) {
   var i = 0;
   while (i < X.rows) {
     var j = 0
     var norm = 0.0;
     while (j < X.cols) {
-      norm += X(i,j)*X(i,j)
+      val xij = X(i,j) + offset
+      norm += xij * xij
       j += 1
     }
     norm = FastMath.sqrt(norm)
+    j = 0
     while (j < X.cols) {
       X(i,j) = X(i,j)/norm
       j += 1
