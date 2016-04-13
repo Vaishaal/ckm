@@ -158,9 +158,10 @@ object CKM extends Serializable with Logging {
         val ccap_old = new CC_old(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
         if (conf.pool(0) > 1) {
           var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
+          var poolerOld =  new MyPoolerOld(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
           pool_accum = pooler.pooling_accum
           convKernel = convKernel andThen ccap andThen pooler
-          convKernel_old = convKernel_old andThen ccap_old andThen pooler
+          convKernel_old = convKernel_old andThen ccap_old andThen poolerOld
         } else {
           convKernel = convKernel andThen ccap
           convKernel_old = convKernel_old andThen ccap
