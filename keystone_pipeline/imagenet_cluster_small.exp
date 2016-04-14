@@ -22,7 +22,7 @@ saveFeatures: False
 solver: BlockWeightedLeastSquares
 kernelGamma: 5e-8
 reg: 0
-yarn: True
+yarn: False
 solverWeight: 0
 blockSize: 2599
 numBlocks: 20

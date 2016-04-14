@@ -190,6 +190,7 @@ object CKM extends Serializable with Logging {
       val count_old = XTrain_old.count()
       val convTrainTime_old  = timeElapsed(convTrainBegin_old)
       val correct = XTrain_old.zip(XTrain).map(x => Stats.aboutEq(x._1, x._2, 1e-4)).reduce(_ && _)
+      println("Num output features " + outFeatures)
       println("XTrain sum" + XTrain.map(sum(_)).reduce(_ + _))
       println("XTrain old sum" + XTrain_old.map(sum(_)).reduce(_ + _))
       assert(correct)
@@ -198,6 +199,8 @@ object CKM extends Serializable with Logging {
       println(s"Per image metric breakdown:")
       accs.map(x => println(x.name.get + ":" + x.value/(count)))
       println(pool_accum.name.get + ":" + pool_accum.value/(count))
+      println("Total Time: " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
+      println("CSV:" + accs.map(x => x.value/(count)).mkString(",") + "," + (pool_accum.value/(count)))
       val numFeatures = XTrain.take(1)(0).size
 
   }
@@ -205,25 +208,23 @@ object CKM extends Serializable with Logging {
   def loadData(sc: SparkContext, dataset: String):Dataset = {
     val (train, test) =
       if (dataset == "imagenet-small") {
-        val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-train-brewed-small",
-          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
-        val test = ImageNetLoader(sc, "/user/vaishaal/imagenet-validation-brewed-small",
-          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
+        val train = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-train-brewed-small",
+          "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
+        val test = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-validation-brewed-small",
+          "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
 
         (train.repartition(384), test.repartition(384))
       } else if (dataset == "imagenet-tiny") {
-        val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-tiny",
-          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
+        val train = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-tiny",
+          "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
         (train.repartition(50), train.repartition(50))
       } else if (dataset == "imagenet-tiny-local") {
-        val train = ImageNetLoader(sc, "/home/eecs/vaishaal/ckm/mldata/imagenet-tiny",
-          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
+        val train = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-tiny",
+          "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
         (train.repartition(50), train.repartition(50))
       } else {
         throw new IllegalArgumentException("Unknown Dataset")
       }
-      train.checkpoint()
-      test.checkpoint()
       return new Dataset(train, test)
   }
   def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
@@ -298,7 +299,6 @@ object CKM extends Serializable with Logging {
       conf.set("spark.driver.maxResultSize", "0")
       conf.setAppName(appConfig.expid)
       val sc = new SparkContext(conf)
-      sc.setCheckpointDir(appConfig.checkpointDir)
       run(sc, appConfig)
       sc.stop()
     }
