@@ -104,7 +104,7 @@ def scala_run(exp, yaml_path, benchmark):
     else:
       pipelineClass="pipelines.CKM"
 
-    pipelineJar = "/scratch/vaishaal/ckm/keystone_pipeline/target/scala-2.10/ckm-assembly-0.1.jar"
+    pipelineJar = "/home/eecs/vaishaal/ckm/keystone_pipeline/target/scala-2.10/ckm-assembly-0.1.jar"
     if not os.path.exists(pipelineJar):
         raise ValueError("Cannot find pipeline jar")
 

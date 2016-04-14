@@ -31,7 +31,7 @@ import java.io.{File, BufferedWriter, FileWriter}
 object Benchmark extends Serializable with Logging {
   val appName = "Benchmark"
 
-  def run(sc: SparkContext, conf: BenchmarkConf) {
+  def run(sc: SparkContext, conf: CKMConf) {
     var data: Dataset = loadData(sc, conf.dataset)
       var convKernel: Pipeline[Image, Image] = new Identity()
       var convKernel_old: Pipeline[Image, Image] = new Identity()
@@ -140,45 +140,6 @@ object Benchmark extends Serializable with Logging {
     (image.metadata.xDim, image.metadata.yDim, image.metadata.numChannels)
   }
 
-  class BenchmarkConf {
-    @BeanProperty var  dataset: String = "imagenet-small"
-    @BeanProperty var  expid: String = "benchmark"
-    @BeanProperty var  mode: String = "scala"
-    @BeanProperty var  seed: Int = 0
-    @BeanProperty var  layers: Int = 1
-    @BeanProperty var  filters: Array[Int] = Array(1)
-    @BeanProperty var  bandwidth : Array[Double] = Array(1.8)
-    @BeanProperty var  patch_sizes: Array[Int] = Array(5)
-    @BeanProperty var  loss: String = "WeightedLeastSquares"
-    @BeanProperty var  reg: Double = 0.001
-    @BeanProperty var  numClasses: Int = 10
-    @BeanProperty var  yarn: Boolean = true
-    @BeanProperty var  solverWeight: Double = 0
-    @BeanProperty var  cosineSolver: Boolean = false
-    @BeanProperty var  cosineFeatures: Int = 40000
-    @BeanProperty var  cosineGamma: Double = 1e-8
-    @BeanProperty var  kernelGamma: Double = 5e-5
-    @BeanProperty var  blockSize: Int = 4000
-    @BeanProperty var  numBlocks: Int = 2
-    @BeanProperty var  numIters: Int = 2
-    @BeanProperty var  whiten: Boolean = false
-    @BeanProperty var  whitenerValue: Double =  0.1
-    @BeanProperty var  whitenerOffset: Double = 0.001
-    @BeanProperty var  solve: Boolean = true
-    @BeanProperty var  solver: String = "kernel"
-    @BeanProperty var  insanity: Boolean = false
-    @BeanProperty var  saveFeatures: Boolean = false
-    @BeanProperty var  pool: Array[Int] = Array(2)
-    @BeanProperty var  poolStride: Array[Int] = Array(2)
-    @BeanProperty var  checkpointDir: String = "/tmp/spark-checkpoint"
-    @BeanProperty var  augment: Boolean = false
-    @BeanProperty var  augmentPatchSize: Int = 24
-    @BeanProperty var  augmentType: String = "random"
-    @BeanProperty var  fastfood: Boolean = false
-    @BeanProperty var  featureDir: String = "/"
-  }
-
-
   case class Dataset(
     val train: RDD[LabeledImage],
     val test: RDD[LabeledImage])
@@ -196,8 +157,8 @@ object Benchmark extends Serializable with Logging {
       val configfile = scala.io.Source.fromFile(args(0))
       val configtext = try configfile.mkString finally configfile.close()
       println(configtext)
-      val yaml = new Yaml(new Constructor(classOf[BenchmarkConf]))
-      val appConfig = yaml.load(configtext).asInstanceOf[BenchmarkConf]
+      val yaml = new Yaml(new Constructor(classOf[CKMConf]))
+      val appConfig = yaml.load(configtext).asInstanceOf[CKMConf]
       val conf = new SparkConf().setAppName(appConfig.expid)
       Logger.getLogger("org").setLevel(Level.WARN)
       Logger.getLogger("akka").setLevel(Level.WARN)

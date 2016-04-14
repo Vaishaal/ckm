@@ -25,17 +25,19 @@ import workflow.Pipeline
 
 import org.yaml.snakeyaml.constructor.Constructor
 import org.yaml.snakeyaml.Yaml
-import scala.reflect.{BeanProperty, ClassTag}
 
 import java.io.{File, BufferedWriter, FileWriter}
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file._
+import scala.collection.mutable.ArrayBuffer
 
 
-object CKMImageNetTrain extends Serializable with Logging {
-  val appName = "CKMImageNetTrain"
+object CKMImageNetTest extends Serializable with Logging {
+  val appName = "CKMImageNetTest"
 
   def run(sc: SparkContext, conf: CKMConf) {
-    var data = loadTrain(sc, conf.dataset, conf.featureDir, conf.labelDir)
-    println("RUNNING CKMImageNetTrain")
+    var data = loadTest(sc, conf.dataset, conf.featureDir, conf.labelDir)
+    println("RUNNING CKMImageNetTest")
     val featureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" + conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
 
     var convKernel: Pipeline[Image, Image] = new Identity()
@@ -56,13 +58,7 @@ object CKMImageNetTrain extends Serializable with Logging {
       .andThen(new Sampler(100000, conf.seed))
       val baseFilters = patchExtractor(data.map(_.image))
       val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
-      val whitener = new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
-      val whitenedBase = whitener(baseFilterMat)
-
-      val rows = whitener.whitener.rows
-      val cols = whitener.whitener.cols
-      println(s"Whitener Rows :${rows}, Cols: ${cols}")
-
+      val whitener = loadWhitener(featureId, conf.modelDir)
       numOutputFeatures = conf.filters(0)
       val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
       val seed = conf.seed
@@ -81,54 +77,91 @@ object CKMImageNetTrain extends Serializable with Logging {
       println("OUT FEATURES " +  outFeatures)
 
       val featurizer = ImageExtractor andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
-      val convTrainBegin = System.nanoTime
-      var XTrain = featurizer(data)
-      val count = XTrain.count()
-      val convTrainTime  = timeElapsed(convTrainBegin)
-      println(s"Generating train features took ${convTrainTime} secs")
+      val convTestBegin = System.nanoTime
+      var XTest = featurizer(data)
+      val count = XTest.count()
+      val convTestTime  = timeElapsed(convTestBegin)
+      println(s"Generating test features took ${convTestTime} secs")
 
       println(s"Per image metric breakdown (for last layer):")
       accs.map(x => println(x.name.get + ":" + x.value/(count)))
       println(pool_accum.name.get + ":" + pool_accum.value/(count))
       println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
-      val numFeatures = XTrain.take(1)(0).size
+      val numFeatures = XTest.take(1)(0).size
       println(s"numFeatures: ${numFeatures}, count: ${count}")
       val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
       println(conf.numClasses)
       println("VECTORIZING LABELS")
 
-      val yTrain = labelVectorizer(LabelExtractor(data))
-      val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+      val yTest = labelVectorizer(LabelExtractor(data))
+      val model = loadModel(featureId, conf.modelDir, conf)
+      println("Testing finish!")
+      val testPredictions = model.apply(XTest).cache()
 
-      println("Training finish!")
-      val trainPredictions = model.apply(XTrain).cache()
+      val yTestPred = MaxClassifier.apply(testPredictions)
 
-      val yTrainPred = MaxClassifier.apply(trainPredictions)
-
-      val top1TrainActual = TopKClassifier(1)(yTrain)
+      val top1TestActual = TopKClassifier(1)(yTest)
       if (conf.numClasses >= 5) {
-        val top5TrainPredicted = TopKClassifier(5)(trainPredictions)
-        println("Top 5 train acc is " + (100 - Stats.getErrPercent(top5TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+        val top5TestPredicted = TopKClassifier(5)(testPredictions)
+        println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, testPredictions.count())) + "%")
       }
 
-      val top1TrainPredicted = TopKClassifier(1)(trainPredictions)
-      println("Top 1 train acc is " + (100 - Stats.getErrPercent(top1TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
-
-      println("Saving model")
-      val xs = model.xs.zipWithIndex
-      xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.weights.${mi._2}"), mi._1, separator = ','))
-      model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.intercept"),b.toDenseMatrix, separator = ','))
-      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.whitener.matrix"),whitener.whitener, separator = ',')
-      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
-
+      val top1TestPredicted = TopKClassifier(1)(testPredictions)
+      println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
   }
 
-  def loadTrain(sc: SparkContext, dataset: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
+  def loadModel(featureId: String, modelDir: String, conf: CKMConf): BlockLinearMapper = {
+    val files = ArrayBuffer.empty[Path]
+    val blockSize = conf.blockSize
+    val numClasses = conf.numClasses
+    val root = Paths.get(modelDir)
+
+    Files.walkFileTree(root, new SimpleFileVisitor[Path] {
+      override def visitFile(file: Path, attrs: BasicFileAttributes) = {
+        if (file.getFileName.toString.startsWith(s"${featureId}.model.weights")) {
+          files += file
+        }
+      FileVisitResult.CONTINUE
+      }
+    })
+
+    val xs: Seq[DenseMatrix[Double]] = files.map { f =>
+      val xVector = loadDenseVector(f.toString)
+      /* This is usually blocksize, but the last block may be smaller */
+      val rows = xVector.size/numClasses
+      xVector.toDenseMatrix.reshape(rows, numClasses)
+    }
+    val interceptPath = s"${modelDir}/${featureId}.model.intercept"
+    val bOpt =
+      if (Files.exists(Paths.get(interceptPath))) {
+        Some(loadDenseVector(interceptPath))
+      } else {
+        None
+      }
+    new BlockLinearMapper(xs, blockSize, bOpt)
+  }
+
+  def loadDenseVector(path: String): DenseVector[Double] = {
+    DenseVector(scala.io.Source.fromFile(path).getLines.toArray.flatMap(_.split(",")).map(_.toDouble))
+  }
+
+
+  def loadWhitener(featureId: String, modelDir: String): ZCAWhitener = {
+    val matrixPath = s"${modelDir}/${featureId}.whitener.matrix"
+    val meansPath = s"${modelDir}/${featureId}.whitener.means"
+    val whitenerVector = loadDenseVector(matrixPath)
+    val whitenSize = math.sqrt(whitenerVector.size).toInt
+    val whitener = whitenerVector.toDenseMatrix.reshape(whitenSize, whitenSize)
+    val means = loadDenseVector(meansPath)
+    new ZCAWhitener(whitener, means)
+  }
+
+  def loadTest(sc: SparkContext, dataset: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
     if (dataset == "imagenet") {
-      ImageNetLoader(sc, s"${dataRoot}/imagenet-train-brewed",
+      ImageNetLoader(sc, s"${dataRoot}/imagenet-validation-brewed",
         s"${labelsRoot}/imagenet-labels").cache
     } else if (dataset == "imagenet-small") {
-      ImageNetLoader(sc, s"${dataRoot}/imagenet-train-brewed-small",
+      ImageNetLoader(sc, s"${dataRoot}/imagenet-validation-brewed-small",
         s"${labelsRoot}/imagenet-small-labels").cache.repartition(200)
     } else {
         throw new IllegalArgumentException("Only Imagenet allowed")

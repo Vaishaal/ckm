@@ -97,14 +97,14 @@ object CKM extends Serializable with Logging {
         ""
       }
 
-    val feature_id = conf.seed + "_" + conf.dataset + augmentString + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" +
+    val featureId = conf.seed + "_" + conf.dataset + augmentString + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" +
       conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
-    println(feature_id)
+    println(featureId)
     val hadoopConf = sc.hadoopConfiguration
     val fs = org.apache.hadoop.fs.FileSystem.get(hadoopConf)
-    val exists = fs.exists(new org.apache.hadoop.fs.Path(s"/${conf.featureDir}/ckn_${feature_id}_train_features"))
+    val exists = fs.exists(new org.apache.hadoop.fs.Path(s"/${conf.featureDir}/ckn_${featureId}_train_features"))
     println("EXISTS " + exists)
-    println(s"/${conf.featureDir}/ckn_${feature_id}_train_features")
+    println(s"/${conf.featureDir}/ckn_${featureId}_train_features")
 
 
     var trainIds = data.train.zipWithUniqueId.map(x => x._2.toInt)
@@ -234,13 +234,13 @@ object CKM extends Serializable with Logging {
 
       if (conf.saveFeatures) {
         println("Saving Features")
-        XTrain.map(_.toArray.mkString(",")).zip(LabelExtractor(data.train)).saveAsTextFile(s"${conf.featureDir}ckn_${feature_id}_train_features")
-        XTest.map(_.toArray.mkString(",")).zip(LabelExtractor(data.test)).saveAsTextFile(s"${conf.featureDir}ckn_${feature_id}_test_features")
+        XTrain.map(_.toArray.mkString(",")).zip(LabelExtractor(data.train)).saveAsTextFile(s"${conf.featureDir}ckn_${featureId}_train_features")
+        XTest.map(_.toArray.mkString(",")).zip(LabelExtractor(data.test)).saveAsTextFile(s"${conf.featureDir}ckn_${featureId}_test_features")
       }
       new FeaturizedDataset(XTrain, XTest, LabelExtractor(data.train), LabelExtractor(data.test))
     } else {
       println("Loading pre existing features...")
-      CKMFeatureLoader(sc, "/" + conf.featureDir, feature_id,  Some(conf.numClasses))
+      CKMFeatureLoader(sc, "/" + conf.featureDir, featureId,  Some(conf.numClasses))
     }
 
     trainIds = featurized.XTrain.zipWithUniqueId.map(x => x._2.toInt)
@@ -339,10 +339,10 @@ object CKM extends Serializable with Logging {
           "/home/eecs/vaishaal/ckm/mldata/imagenet/imagenet-labels").cache
         (train, test)
       } else if (dataset == "imagenet-small") {
-        val train = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-train-brewed-small",
-          "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
-        val test = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-validation-brewed-small",
-          "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
+        val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-train-brewed-small",
+          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
+        val test = ImageNetLoader(sc, "/user/vaishaal/imagenet-validation-brewed-small",
+          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
 
         (train.repartition(200), test.repartition(200))
       } else if (dataset == "imagenet-tiny") {
@@ -363,45 +363,6 @@ object CKM extends Serializable with Logging {
     val image = data.train.take(1)(0).image
     (image.metadata.xDim, image.metadata.yDim, image.metadata.numChannels)
   }
-
-  class CKMConf {
-    @BeanProperty var  dataset: String = "mnist_small"
-    @BeanProperty var  expid: String = "mnist_small_simple"
-    @BeanProperty var  mode: String = "scala"
-    @BeanProperty var  seed: Int = 0
-    @BeanProperty var  layers: Int = 1
-    @BeanProperty var  filters: Array[Int] = Array(1)
-    @BeanProperty var  bandwidth : Array[Double] = Array(1.8)
-    @BeanProperty var  patch_sizes: Array[Int] = Array(5)
-    @BeanProperty var  loss: String = "WeightedLeastSquares"
-    @BeanProperty var  reg: Double = 0.001
-    @BeanProperty var  numClasses: Int = 10
-    @BeanProperty var  yarn: Boolean = true
-    @BeanProperty var  solverWeight: Double = 0
-    @BeanProperty var  cosineSolver: Boolean = false
-    @BeanProperty var  cosineFeatures: Int = 40000
-    @BeanProperty var  cosineGamma: Double = 1e-8
-    @BeanProperty var  kernelGamma: Double = 5e-5
-    @BeanProperty var  blockSize: Int = 4000
-    @BeanProperty var  numBlocks: Int = 2
-    @BeanProperty var  numIters: Int = 2
-    @BeanProperty var  whiten: Boolean = false
-    @BeanProperty var  whitenerValue: Double =  0.1
-    @BeanProperty var  whitenerOffset: Double = 0.001
-    @BeanProperty var  solve: Boolean = true
-    @BeanProperty var  solver: String = "kernel"
-    @BeanProperty var  insanity: Boolean = false
-    @BeanProperty var  saveFeatures: Boolean = false
-    @BeanProperty var  pool: Array[Int] = Array(2)
-    @BeanProperty var  poolStride: Array[Int] = Array(2)
-    @BeanProperty var  checkpointDir: String = "/tmp/spark-checkpoint"
-    @BeanProperty var  augment: Boolean = false
-    @BeanProperty var  augmentPatchSize: Int = 24
-    @BeanProperty var  augmentType: String = "random"
-    @BeanProperty var  fastfood: Boolean = false
-    @BeanProperty var  featureDir: String = "/"
-  }
-
 
   case class Dataset(
     val train: RDD[LabeledImage],
