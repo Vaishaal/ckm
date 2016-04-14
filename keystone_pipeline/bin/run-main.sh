@@ -58,7 +58,7 @@ else
 fi
 
 # Set KEYSTONE_MEM if it isn't already set since we also use it for this process
-KEYSTONE_MEM=50g
+KEYSTONE_MEM=100g
 export KEYSTONE_MEM
 
 JAVA_OPTS="$JAVA_OPTS -Xms$KEYSTONE_MEM -Xmx$KEYSTONE_MEM ""$SPARK_JAVA_OPTS"

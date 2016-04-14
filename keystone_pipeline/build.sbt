@@ -43,11 +43,12 @@ libraryDependencies ++= Seq(
     "org.apache.spark" % "spark-core_2.10" % sparkVersion excludeAll(excludeHadoop),
     "org.apache.spark" % "spark-mllib_2.10" % sparkVersion excludeAll(excludeHadoop),
     "org.apache.spark" % "spark-sql_2.10" % sparkVersion excludeAll(excludeHadoop),
-    "edu.berkeley.cs.amplab" % "keystoneml_2.10" % "0.3.0-SNAPSHOT" excludeAll(excludeHadoop, excludeSpark), 
+    "edu.berkeley.cs.amplab" % "keystoneml_2.10" % "0.3.1-SNAPSHOT" excludeAll(excludeHadoop, excludeSpark), 
     "org.yaml" % "snakeyaml" % "1.16",
     "org.apache.commons" % "commons-csv" % "1.2",
     "com.amazonaws" % "aws-java-sdk" % "1.9.40",
-    "com.github.seratch" %% "awscala" % "0.5.+"
+    "com.github.seratch" %% "awscala" % "0.5.+",
+    "net.jafama" % "jafama" % "2.1.0"
   )
 }
 
