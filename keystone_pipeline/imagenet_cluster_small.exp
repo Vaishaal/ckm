@@ -11,20 +11,19 @@ patch_sizes: [5]
 bandwidth: [1.0]
 pool: [16]
 poolStride: [16]
-filters: [256]
+filters: [4]
 whiten: True
 whitenerValue: 0.01
 whitenerOffset: 0.1
+featureDir: /scratch/vaishaal/ckm/mldata/
+labelDir: /scratch/vaishaal/ckm/mldata/imagenet-small/
 
 # Solver Params
 solve: True
-saveFeatures: False
-solver: BlockWeightedLeastSquares
-kernelGamma: 5e-8
 reg: 0
 yarn: False
 solverWeight: 0
-blockSize: 2599
+blockSize: 1024
 numBlocks: 20
 numIters: 1
 
