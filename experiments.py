@@ -32,6 +32,7 @@ def main():
     # First parse arguments for the CKM
     parser = argparse.ArgumentParser(description='Convolutional Kernel Machine')
     parser.add_argument('config', help='path to config file for experiment')
+    parser.add_argument('-b', '--benchmark', action='store_const', const=True)
     args = parser.parse_args()
     exp = parse_experiment(args.config)
 
@@ -43,7 +44,7 @@ def main():
     if (exp.get("mode") == "python"):
         results = python_run(exp)
     elif (exp.get("mode") == "scala"):
-        results = scala_run(exp, args.config)
+        results = scala_run(exp, args.config, args.benchmark)
     if (not (results is None)):
         print results.to_csv(header=True)
 
@@ -85,7 +86,7 @@ def python_run(exp):
     results.insert(len(results.columns), "runtime",  runtime)
     return results
 
-def scala_run(exp, yaml_path):
+def scala_run(exp, yaml_path, benchmark):
     start_time = time.time()
     expid = exp["expid"]
     config_yaml = yaml_path
@@ -98,7 +99,11 @@ def scala_run(exp, yaml_path):
     logfile = expid + ".spark.log"
     # if os.path.exists(logfile) and output_sanity_check:
     #     raise ValueError("output dir has logfile, should be empty")
-    pipelineClass="pipelines.CKM"
+    if (benchmark):
+      pipelineClass="pipelines.Benchmark"
+    else:
+      pipelineClass="pipelines.CKM"
+
     pipelineJar = "/scratch/vaishaal/ckm/keystone_pipeline/target/scala-2.10/ckm-assembly-0.1.jar"
     if not os.path.exists(pipelineJar):
         raise ValueError("Cannot find pipeline jar")

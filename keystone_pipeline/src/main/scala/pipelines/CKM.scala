@@ -89,7 +89,7 @@ object CKM extends Serializable with Logging {
 
   def run(sc: SparkContext, conf: CKMConf) {
     var data: Dataset = loadData(sc, conf.dataset)
-    println("RUNNING BENCHMARK")
+    println("RUNNING CKM")
     val augmentString =
       if (conf.augment) {
         "Augmented"
@@ -103,6 +103,7 @@ object CKM extends Serializable with Logging {
     val hadoopConf = sc.hadoopConfiguration
     val fs = org.apache.hadoop.fs.FileSystem.get(hadoopConf)
     val exists = fs.exists(new org.apache.hadoop.fs.Path(s"/${conf.featureDir}/ckn_${feature_id}_train_features"))
+    println("EXISTS " + exists)
     println(s"/${conf.featureDir}/ckn_${feature_id}_train_features")
 
 
@@ -114,8 +115,9 @@ object CKM extends Serializable with Logging {
         testIds = labelAugmenter(testIds)
     }
 
+    val featurized: FeaturizedDataset =
+    if (!exists) {
       var convKernel: Pipeline[Image, Image] = new Identity()
-      var convKernel_old: Pipeline[Image, Image] = new Identity()
       implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(conf.seed)))
       val gaussian = new Gaussian(0, 1)
       val uniform = new Uniform(0, 1)
@@ -135,7 +137,8 @@ object CKM extends Serializable with Logging {
 
       var accs: List[Accumulator[Double]] = List()
       var pool_accum = sc.accumulator(0.0)
-        val start = System.nanoTime()
+      val startLayer =
+      if (conf.whiten) {
         // Whiten top level
         val patchExtractor = new Windower(1, conf.patch_sizes(0))
                                                 .andThen(ImageVectorizer.apply)
@@ -148,83 +151,210 @@ object CKM extends Serializable with Logging {
         val rows = whitener.whitener.rows
         val cols = whitener.whitener.cols
         println(s"Whitener Rows :${rows}, Cols: ${cols}")
-        println(s"Whitening took ${timeElapsed(start)} secs")
 
         numOutputFeatures = conf.filters(0)
         val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
         val seed = conf.seed
         val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
         accs =  ccap.accs
-        val ccap_old = new CC_old(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
         if (conf.pool(0) > 1) {
           var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
-          var poolerOld =  new MyPoolerOld(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
           pool_accum = pooler.pooling_accum
           convKernel = convKernel andThen ccap andThen pooler
-          convKernel_old = convKernel_old andThen ccap_old andThen poolerOld
         } else {
           convKernel = convKernel andThen ccap
-          convKernel_old = convKernel_old andThen ccap
         }
         currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
         currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
 
         println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
         numInputFeatures = numOutputFeatures
+        1
+      } else {
+        0
+      }
 
+      for (i <- startLayer until conf.layers) {
+        numOutputFeatures = conf.filters(i)
+        val patchSize = math.pow(conf.patch_sizes(i), 2).toInt
+        val seed = conf.seed + i
+        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(i), conf.insanity, conf.fastfood)
+
+        if (conf.pool(i) > 1) {
+          var pooler =  new Pooler(conf.poolStride(i), conf.pool(i), identity, (x:DenseVector[Double]) => mean(x))
+          convKernel = convKernel andThen ccap andThen pooler
+        } else {
+          convKernel = convKernel andThen ccap
+        }
+        // (8 - 3 + 1)
+        currX = math.ceil(((currX  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
+        currY = math.ceil(((currY  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
+        println(s"Layer ${i} output, Width: ${currX}, Height: ${currY}")
+        numInputFeatures = numOutputFeatures
+      }
       val outFeatures = currX * currY * numOutputFeatures
 
       val meta = data.train.take(1)(0).image.metadata
-      val featurizer = ImageExtractor  andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
-      val featurizer_old = ImageExtractor  andThen convKernel_old andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
+      val featurizer1 = ImageExtractor  andThen convKernel
+      val featurizer2 = ImageVectorizer andThen new Cacher[DenseVector[Double]]
 
-      val dataSample = ImageVectorizer(ImageExtractor(data.train))
-      println(dataSample.collect().map(sum(_)).reduce(_ + _))
+      println("OUT FEATURES " +  outFeatures)
+      var featurizer = featurizer1 andThen featurizer2
+      if (conf.cosineSolver) {
+        val randomFeatures = SeededCosineRandomFeatures(outFeatures, conf.cosineFeatures,  conf.cosineGamma, 24) andThen new Cacher[DenseVector[Double]]
+        featurizer = featurizer andThen randomFeatures
+      }
+
+      val dataLoadBegin = System.nanoTime
+      data.train.count()
+      data.test.count()
+      val dataLoadTime = timeElapsed(dataLoadBegin)
+      println(s"Loading data took ${dataLoadTime} secs")
+
+
       val convTrainBegin = System.nanoTime
       var XTrain = featurizer(data.train)
       val count = XTrain.count()
       val convTrainTime  = timeElapsed(convTrainBegin)
+      println(s"Generating train features took ${convTrainTime} secs")
 
-      val convTrainBegin_old = System.nanoTime
-      var XTrain_old = featurizer_old(data.train)
-      val count_old = XTrain_old.count()
-      val convTrainTime_old  = timeElapsed(convTrainBegin_old)
-      val correct = XTrain_old.zip(XTrain).map(x => Stats.aboutEq(x._1, x._2, 1e-4)).reduce(_ && _)
-      println("Num output features " + outFeatures)
-      println("XTrain sum" + XTrain.map(sum(_)).reduce(_ + _))
-      println("XTrain old sum" + XTrain_old.map(sum(_)).reduce(_ + _))
-      assert(correct)
-      println(s"Correctness is: ${correct}")
-      println(s"Old featurization took ${convTrainTime_old} secs, new featurizaiton ook ${convTrainTime} secs")
-      println(s"Per image metric breakdown:")
+      val convTestBegin = System.nanoTime
+      var XTest = featurizer(data.test)
+      XTest.count()
+      val convTestTime  = timeElapsed(convTestBegin)
+      println(s"Generating test features took ${convTestTime} secs")
+
+      println(s"Per image metric breakdown (for last layer):")
       accs.map(x => println(x.name.get + ":" + x.value/(count)))
       println(pool_accum.name.get + ":" + pool_accum.value/(count))
-      println("Total Time: " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
-      println("CSV:" + accs.map(x => x.value/(count)).mkString(",") + "," + (pool_accum.value/(count)))
+      println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
       val numFeatures = XTrain.take(1)(0).size
+      println(s"numFeatures: ${numFeatures}, count: ${count}")
 
+
+      if (conf.saveFeatures) {
+        println("Saving Features")
+        XTrain.map(_.toArray.mkString(",")).zip(LabelExtractor(data.train)).saveAsTextFile(s"${conf.featureDir}ckn_${feature_id}_train_features")
+        XTest.map(_.toArray.mkString(",")).zip(LabelExtractor(data.test)).saveAsTextFile(s"${conf.featureDir}ckn_${feature_id}_test_features")
+      }
+      new FeaturizedDataset(XTrain, XTest, LabelExtractor(data.train), LabelExtractor(data.test))
+    } else {
+      println("Loading pre existing features...")
+      CKMFeatureLoader(sc, "/" + conf.featureDir, feature_id,  Some(conf.numClasses))
+    }
+
+    trainIds = featurized.XTrain.zipWithUniqueId.map(x => x._2.toInt)
+    testIds = featurized.XTest.zipWithUniqueId.map(x => x._2.toInt)
+
+    val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
+    println(conf.numClasses)
+    println("VECTORIZING LABELS")
+
+    val yTrain = labelVectorizer(featurized.yTrain)
+    val yTest = labelVectorizer(featurized.yTest).map(convert(_, Int).toArray)
+    val XTrain = featurized.XTrain
+    val XTest = featurized.XTest
+
+    if (conf.solve) {
+      val model =
+      if (conf.solver ==  "kernel" ) {
+      val kernelGen = new GaussianKernelGenerator(conf.kernelGamma, XTrain)
+       new KernelRidgeRegression(kernelGen, conf.reg, conf.blockSize, conf.numIters, Some(895423832L)).fit(XTrain, yTrain)
+     } else {
+      new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+    }
+        val trainPredictions = model.apply(XTrain).cache()
+        val testPredictions =  model.apply(XTest).cache()
+        val testLabels = labelVectorizer(featurized.yTest)
+        val trainLabels = labelVectorizer(featurized.yTrain)
+
+        val yTrainPred = MaxClassifier.apply(trainPredictions)
+        val yTestPred =  MaxClassifier.apply(testPredictions)
+
+        val top1Actual = TopKClassifier(1)(testLabels)
+        val top1TrainActual = TopKClassifier(1)(trainLabels)
+
+          if (!conf.augment) {
+            if (conf.numClasses >= 5) {
+              val top5Predicted = TopKClassifier(5)(testPredictions)
+              println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5Predicted, top1Actual, testPredictions.count())) + "%")
+              val top5TrainPredicted = TopKClassifier(5)(trainPredictions)
+              println("Top 5 train acc is " + (100 - Stats.getErrPercent(top5TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+            }
+
+            val top1Predicted = TopKClassifier(1)(testPredictions)
+            val top1TrainPredicted = TopKClassifier(1)(trainPredictions)
+            println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1Predicted, top1Actual, testPredictions.count())) + "%")
+            println("Top 1 train acc is " + (100 - Stats.getErrPercent(top1TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+          } else {
+            val trainEval = AugmentedExamplesEvaluator(
+              trainIds, trainPredictions, featurized.yTrain, conf.numClasses)
+            val testEval = AugmentedExamplesEvaluator(
+              testIds, testPredictions, featurized.yTest, conf.numClasses)
+            println(s"total training accuracy ${1 - trainEval.totalError}")
+            println(s"total testing accuracy ${1 - testEval.totalError}")
+          }
+
+
+
+        val out_train = new BufferedWriter(new FileWriter("/tmp/ckm_train_results"))
+        val out_test = new BufferedWriter(new FileWriter("/tmp/ckm_test_results"))
+
+        trainPredictions.zip(featurized.yTrain.zip(trainIds)).map {
+            case (weights, (label, id)) => s"$id,$label," + weights.toArray.mkString(",")
+          }.collect().foreach{x =>
+            out_train.write(x)
+            out_train.write("\n")
+          }
+          out_train.close()
+
+        testPredictions.zip(featurized.yTest.zip(testIds)).map {
+            case (weights, (label, id)) => s"$id,$label," + weights.toArray.mkString(",")
+          }.collect().foreach{x =>
+            out_test.write(x)
+            out_test.write("\n")
+          }
+          out_test.close()
+      }
   }
 
   def loadData(sc: SparkContext, dataset: String):Dataset = {
     val (train, test) =
-      if (dataset == "imagenet-small") {
+      if (dataset == "cifar") {
+        val train = CifarLoader2(sc, "/home/eecs/vaishaal/ckm/mldata/cifar/cifar_train.bin").cache
+        val test = CifarLoader2(sc, "/home/eecs/vaishaal/ckm/mldata/cifar/cifar_test.bin").cache
+        (train, test)
+      } else if (dataset == "mnist") {
+        val train = MnistLoader(sc, "/home/eecs/vaishaal/ckm/mldata/mnist", 10, "train").cache
+        val test = MnistLoader(sc, "/home/eecs/vaishaal/ckm/mldata/mnist", 10, "test").cache
+        (train, test)
+      } else if (dataset == "mnist_small") {
+        val train = SmallMnistLoader(sc, "/Users/vaishaal/research/ckm/mldata/mnist_small", 10, "train").cache
+        val test = SmallMnistLoader(sc, "/Users/vaishaal/research/ckm/mldata/mnist_small", 10, "test").cache
+        (train, test)
+      } else if (dataset == "imagenet") {
+        val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-train-brewed",
+          "/home/eecs/vaishaal/ckm/mldata/imagenet/imagenet-labels").cache
+        val test = ImageNetLoader(sc, "/user/vaishaal/imagenet-validation-brewed",
+          "/home/eecs/vaishaal/ckm/mldata/imagenet/imagenet-labels").cache
+        (train, test)
+      } else if (dataset == "imagenet-small") {
         val train = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-train-brewed-small",
           "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
         val test = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-validation-brewed-small",
           "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
 
-        (train.repartition(384), test.repartition(384))
+        (train.repartition(200), test.repartition(200))
       } else if (dataset == "imagenet-tiny") {
-        val train = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-tiny",
-          "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
-        (train.repartition(50), train.repartition(50))
-      } else if (dataset == "imagenet-tiny-local") {
         val train = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-tiny",
           "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
         (train.repartition(50), train.repartition(50))
       } else {
         throw new IllegalArgumentException("Unknown Dataset")
       }
+      /* TODO: uncomment for CIFAR */
+      //train.checkpoint()
+      //test.checkpoint()
       return new Dataset(train, test)
   }
   def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
@@ -299,6 +429,7 @@ object CKM extends Serializable with Logging {
       conf.set("spark.driver.maxResultSize", "0")
       conf.setAppName(appConfig.expid)
       val sc = new SparkContext(conf)
+      //sc.setCheckpointDir(appConfig.checkpointDir)
       run(sc, appConfig)
       sc.stop()
     }
