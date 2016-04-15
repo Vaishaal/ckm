@@ -54,14 +54,18 @@ object CKMImageNetTrain extends Serializable with Logging {
 
     var accs: List[Accumulator[Double]] = List()
     var pool_accum = sc.accumulator(0.0)
-    val patchExtractor = new Windower(1, conf.patch_sizes(0))
-      .andThen(ImageVectorizer.apply)
-      .andThen(new Sampler(100000, conf.seed))
 
-    val baseFilters = patchExtractor(data.map(_.image))
-    val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
-    val whitener = new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
-    val whitenedBase = whitener(baseFilterMat)
+    val whitener = if (conf.loadWhitener) {
+      val patchExtractor = new Windower(1, conf.patch_sizes(0))
+        .andThen(ImageVectorizer.apply)
+        .andThen(new Sampler(100000, conf.seed))
+
+      val baseFilters = patchExtractor(data.map(_.image))
+      val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
+      new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
+    } else {
+      CKMImageNetTest.loadWhitener(featureId, conf.modelDir)
+    }
 
     val rows = whitener.whitener.rows
     val cols = whitener.whitener.cols
@@ -105,6 +109,13 @@ object CKMImageNetTrain extends Serializable with Logging {
     println("VECTORIZING LABELS")
 
     val yTrain = labelVectorizer(LabelExtractor(data))
+
+    if (conf.saveFeatures) {
+      println("Saving Features")
+      XTrain.zip(LabelExtractor(data)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
+        s"${conf.featureDir}ckn_${featureId}_train_features")
+    }
+
     val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
 
     println("Training finish!")
