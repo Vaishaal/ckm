@@ -129,7 +129,7 @@ object CKMImageNetTrain extends Serializable with Logging {
         s"${labelsRoot}/imagenet-labels").cache
     } else if (dataset == "imagenet-small") {
       ImageNetLoader(sc, s"${dataRoot}/imagenet-train-brewed-small",
-        s"${labelsRoot}/imagenet-small-labels").cache.repartition(200)
+        s"${labelsRoot}/imagenet-small-labels").repartition(200).cache()
     } else {
         throw new IllegalArgumentException("Only Imagenet allowed")
     }

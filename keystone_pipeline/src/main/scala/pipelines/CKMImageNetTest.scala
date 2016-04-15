@@ -129,7 +129,7 @@ object CKMImageNetTest extends Serializable with Logging {
       val xVector = loadDenseVector(f.toString)
       /* This is usually blocksize, but the last block may be smaller */
       val rows = xVector.size/numClasses
-      xVector.toDenseMatrix.reshape(rows, numClasses)
+      xVector.toDenseMatrix.reshape(numClasses, rows).t
     }
     val interceptPath = s"${modelDir}/${featureId}.model.intercept"
     val bOpt =
@@ -162,7 +162,7 @@ object CKMImageNetTest extends Serializable with Logging {
         s"${labelsRoot}/imagenet-labels").cache
     } else if (dataset == "imagenet-small") {
       ImageNetLoader(sc, s"${dataRoot}/imagenet-validation-brewed-small",
-        s"${labelsRoot}/imagenet-small-labels").cache.repartition(200)
+        s"${labelsRoot}/imagenet-small-labels").repartition(200).cache()
     } else {
         throw new IllegalArgumentException("Only Imagenet allowed")
     }
