@@ -353,8 +353,8 @@ object CKM extends Serializable with Logging {
         throw new IllegalArgumentException("Unknown Dataset")
       }
       /* TODO: uncomment for CIFAR */
-      //train.checkpoint()
-      //test.checkpoint()
+      train.checkpoint()
+      test.checkpoint()
       return new Dataset(train, test)
   }
   def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
@@ -390,7 +390,7 @@ object CKM extends Serializable with Logging {
       conf.set("spark.driver.maxResultSize", "0")
       conf.setAppName(appConfig.expid)
       val sc = new SparkContext(conf)
-      //sc.setCheckpointDir(appConfig.checkpointDir)
+      sc.setCheckpointDir(appConfig.checkpointDir)
       run(sc, appConfig)
       sc.stop()
     }
