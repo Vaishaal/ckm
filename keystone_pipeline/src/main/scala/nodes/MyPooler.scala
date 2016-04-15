@@ -46,31 +46,30 @@ class MyPooler(
     while (x < xDim) {
       var y = strideStart
       while (y < yDim) {
-      val pool = DenseVector.zeros[Double](poolSize * poolSize)
-      val startX = x - poolSize/2
-      val endX = math.min(x + poolSize/2, xDim)
-      val startY = y - poolSize/2
-      val endY = math.min(y + poolSize/2, yDim)
-
-      var c = 0
-      while (c < numChannels) {
+        val startX = x - poolSize/2
+        val endX = math.min(x + poolSize/2, xDim)
+        val startY = y - poolSize/2
+        val endY = math.min(y + poolSize/2, yDim)
+        val output_offset = (x - strideStart)/stride * numChannels +
+        (y - strideStart)/stride * numPoolsX * numChannels
         var s = startX
         while (s < endX) {
           var b = startY
           while (b < endY) {
-            pool((s-startX) + (b-startY)*(endX-startX)) =
-              pixelFunction(image.get(s, b, c))
+            var c = 0
+            while (c < numChannels) {
+              val position = c + output_offset
+              val pix = image.get(s, b, c)
+              patch(position) += pix/(1.0*poolSize*poolSize)
+              c = c + 1
+            }
             b = b + 1
           }
           s = s + 1
         }
-        patch(c + (x - strideStart)/stride * numChannels +
-          (y - strideStart)/stride * numPoolsX * numChannels) = poolFunction(pool)
-        c = c + 1
+        y += stride
       }
-      y += stride
-    }
-    x += stride
+      x += stride
     }
     val out = ChannelMajorArrayVectorizedImage(patch, ImageMetadata(numPoolsX, numPoolsY, numChannels))
     pooling_accum += timeElapsed(poolStart)
