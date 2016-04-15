@@ -38,14 +38,14 @@ object CKMFeatureLoader {
    println(trainPath)
    val testPath = s"${path}/ckn_${feature_id}_test_features"
    val (trainText, testText) =
-   if (partitions.getOrElse(-1) == -1) {
+   if (partitions.isEmpty) {
      val trainText:RDD[String] = sc.textFile(trainPath)
      val testText:RDD[String] = sc.textFile(testPath)
      (trainText, testText)
   } else {
-     println("1000 partitions")
-     val trainText:RDD[String] = sc.textFile(trainPath, 1000)
-     val testText:RDD[String] = sc.textFile(testPath, 1000)
+     println(s"${partitions.get} partitions")
+     val trainText:RDD[String] = sc.textFile(trainPath, partitions.get)
+     val testText:RDD[String] = sc.textFile(testPath, partitions.get)
      (trainText, testText)
   }
 
