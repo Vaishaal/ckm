@@ -29,7 +29,6 @@ import scala.reflect.{BeanProperty, ClassTag}
 
 import java.io.{File, BufferedWriter, FileWriter}
 
-
 object CKMImageNetTrain extends Serializable with Logging {
   val appName = "CKMImageNetTrain"
 
@@ -43,8 +42,12 @@ object CKMImageNetTrain extends Serializable with Logging {
     val gaussian = new Gaussian(0, 1)
     val uniform = new Uniform(0, 1)
     var numOutputFeatures = 0
+
+    data.count()
+
     val (xDim, yDim, numChannels) = getInfo(data)
     println(s"Info ${xDim}, ${yDim}, ${numChannels}")
+
     var numInputFeatures = numChannels
     var currX = xDim
     var currY = yDim
@@ -54,78 +57,81 @@ object CKMImageNetTrain extends Serializable with Logging {
     val patchExtractor = new Windower(1, conf.patch_sizes(0))
       .andThen(ImageVectorizer.apply)
       .andThen(new Sampler(100000, conf.seed))
-      val baseFilters = patchExtractor(data.map(_.image))
-      val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
-      val whitener = new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
-      val whitenedBase = whitener(baseFilterMat)
 
-      val rows = whitener.whitener.rows
-      val cols = whitener.whitener.cols
-      println(s"Whitener Rows :${rows}, Cols: ${cols}")
+    val baseFilters = patchExtractor(data.map(_.image))
+    val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
+    val whitener = new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
+    val whitenedBase = whitener(baseFilterMat)
 
-      numOutputFeatures = conf.filters(0)
-      val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
-      val seed = conf.seed
-      val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
-      accs =  ccap.accs
-      var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
-      pool_accum = pooler.pooling_accum
-      convKernel = convKernel andThen ccap andThen pooler
-      currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
-      currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+    val rows = whitener.whitener.rows
+    val cols = whitener.whitener.cols
+    println(s"Whitener Rows :${rows}, Cols: ${cols}")
 
-      numInputFeatures = numOutputFeatures
-      data.count()
-      val outFeatures = currX * currY * numOutputFeatures
-      println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
-      println("OUT FEATURES " +  outFeatures)
+    numOutputFeatures = conf.filters(0)
+    val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
+    val seed = conf.seed
 
-      val featurizer = ImageExtractor andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
-      val convTrainBegin = System.nanoTime
-      var XTrain = featurizer(data)
-      val count = XTrain.count()
-      val convTrainTime  = timeElapsed(convTrainBegin)
-      println(s"Generating train features took ${convTrainTime} secs")
+    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
+    accs =  ccap.accs
+    var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
+    pool_accum = pooler.pooling_accum
+    convKernel = convKernel andThen ccap andThen pooler
 
-      println(s"Per image metric breakdown (for last layer):")
-      accs.map(x => println(x.name.get + ":" + x.value/(count)))
-      println(pool_accum.name.get + ":" + pool_accum.value/(count))
-      println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
-      val numFeatures = XTrain.take(1)(0).size
-      println(s"numFeatures: ${numFeatures}, count: ${count}")
-      val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
-      println(conf.numClasses)
-      println("VECTORIZING LABELS")
+    currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+    currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
 
-      val yTrain = labelVectorizer(LabelExtractor(data))
-      val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+    numInputFeatures = numOutputFeatures
+    val outFeatures = currX * currY * numOutputFeatures
+    println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
+    println("OUT FEATURES " +  outFeatures)
 
-      println("Training finish!")
-      val trainPredictions = model.apply(XTrain).cache()
+    val featurizer = ImageExtractor andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
+    val convTrainBegin = System.nanoTime
+    var XTrain = featurizer(data)
+    val count = XTrain.count()
+    val convTrainTime  = timeElapsed(convTrainBegin)
+    println(s"Generating train features took ${convTrainTime} secs")
 
-      val yTrainPred = MaxClassifier.apply(trainPredictions)
+    println(s"Per image metric breakdown (for last layer):")
+    accs.map(x => println(x.name.get + ":" + x.value/(count)))
+    println(pool_accum.name.get + ":" + pool_accum.value/(count))
+    println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
 
-      val top1TrainActual = TopKClassifier(1)(yTrain)
-      if (conf.numClasses >= 5) {
-        val top5TrainPredicted = TopKClassifier(5)(trainPredictions)
-        println("Top 5 train acc is " + (100 - Stats.getErrPercent(top5TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
-      }
+    // val numFeatures = XTrain.take(1)(0).size
+    // println(s"numFeatures: ${numFeatures}, count: ${count}")
 
-      val top1TrainPredicted = TopKClassifier(1)(trainPredictions)
-      println("Top 1 train acc is " + (100 - Stats.getErrPercent(top1TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+    val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
+    println(conf.numClasses)
+    println("VECTORIZING LABELS")
 
-      println("Saving model")
-      val xs = model.xs.zipWithIndex
-      xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.weights.${mi._2}"), mi._1, separator = ','))
-      model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.intercept"),b.toDenseMatrix, separator = ','))
-      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.whitener.matrix"),whitener.whitener, separator = ',')
-      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
+    val yTrain = labelVectorizer(LabelExtractor(data))
+    val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
 
+    println("Training finish!")
+    val trainPredictions = model.apply(XTrain).cache()
+
+    val yTrainPred = MaxClassifier.apply(trainPredictions)
+
+    val top1TrainActual = TopKClassifier(1)(yTrain)
+    if (conf.numClasses >= 5) {
+      val top5TrainPredicted = TopKClassifier(5)(trainPredictions)
+      println("Top 5 train acc is " + (100 - Stats.getErrPercent(top5TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+    }
+
+    val top1TrainPredicted = TopKClassifier(1)(trainPredictions)
+    println("Top 1 train acc is " + (100 - Stats.getErrPercent(top1TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+
+    println("Saving model")
+    val xs = model.xs.zipWithIndex
+    xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.weights.${mi._2}"), mi._1, separator = ','))
+    model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.intercept"),b.toDenseMatrix, separator = ','))
+    breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.whitener.matrix"),whitener.whitener, separator = ',')
+    breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
   }
 
   def loadTrain(sc: SparkContext, dataset: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
     if (dataset == "imagenet") {
-      ImageNetLoader(sc, s"${dataRoot}/imagenet-train-brewed",
+      ImageNetLoader(sc, s"${dataRoot}/imagenet-train",
         s"${labelsRoot}/imagenet-labels").cache
     } else if (dataset == "imagenet-small") {
       ImageNetLoader(sc, s"${dataRoot}/imagenet-train-brewed-small",
@@ -157,8 +163,12 @@ object CKMImageNetTrain extends Serializable with Logging {
       val yaml = new Yaml(new Constructor(classOf[CKMConf]))
       val appConfig = yaml.load(configtext).asInstanceOf[CKMConf]
       val conf = new SparkConf().setAppName(appConfig.expid)
-      Logger.getLogger("org").setLevel(Level.WARN)
-      Logger.getLogger("akka").setLevel(Level.WARN)
+      // Logger.getLogger("org").setLevel(Level.WARN)
+      // Logger.getLogger("akka").setLevel(Level.WARN)
+
+      // NOTE: ONLY APPLICABLE IF YOU CAN DONE COPY-DIR
+      conf.remove("spark.jars")
+
       conf.setIfMissing("spark.master", "local[16]")
       conf.set("spark.driver.maxResultSize", "0")
       conf.setAppName(appConfig.expid)
