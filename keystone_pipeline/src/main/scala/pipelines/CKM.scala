@@ -340,11 +340,10 @@ object CKM extends Serializable with Logging {
         (train, test)
       } else if (dataset == "imagenet-small") {
         val train = ImageNetLoader(sc, "/user/vaishaal/imagenet-train-brewed-small",
-          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
+          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels")
         val test = ImageNetLoader(sc, "/user/vaishaal/imagenet-validation-brewed-small",
-          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
-
-        (train.repartition(200), test.repartition(200))
+          "/home/eecs/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels")
+        (train.repartition(200).cache, test.repartition(200).cache)
       } else if (dataset == "imagenet-tiny") {
         val train = ImageNetLoader(sc, "/scratch/vaishaal/ckm/mldata/imagenet-tiny",
           "/scratch/vaishaal/ckm/mldata/imagenet-small/imagenet-small-labels").cache
