@@ -39,5 +39,6 @@ class CKMConf {
   @BeanProperty var  featureDir: String = "/"
   @BeanProperty var  labelDir: String = "/"
   @BeanProperty var  modelDir: String = "/tmp"
+  @BeanProperty var  loadWhitener: Boolean = false
 }
 

@@ -36,78 +36,82 @@ object CKMImageNetTest extends Serializable with Logging {
   val appName = "CKMImageNetTest"
 
   def run(sc: SparkContext, conf: CKMConf) {
-    var data = loadTest(sc, conf.dataset, conf.featureDir, conf.labelDir)
     println("RUNNING CKMImageNetTest")
     val featureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" + conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
 
     var convKernel: Pipeline[Image, Image] = new Identity()
-    implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(conf.seed)))
-    val gaussian = new Gaussian(0, 1)
-    val uniform = new Uniform(0, 1)
-    var numOutputFeatures = 0
+    var accs: List[Accumulator[Double]] = List()
+
+    var pool_accum = sc.accumulator(0.0)
+    val whitener = loadWhitener(featureId, conf.modelDir)
+
+    val model = loadModel(featureId, conf.modelDir, conf)
+
+    var data = loadTest(sc, conf.dataset, conf.featureDir, conf.labelDir)
+    val count = data.count()
+
     val (xDim, yDim, numChannels) = getInfo(data)
     println(s"Info ${xDim}, ${yDim}, ${numChannels}")
+
+    var numOutputFeatures = 0
+
     var numInputFeatures = numChannels
     var currX = xDim
     var currY = yDim
 
-    var accs: List[Accumulator[Double]] = List()
-    var pool_accum = sc.accumulator(0.0)
-    val patchExtractor = new Windower(1, conf.patch_sizes(0))
-      .andThen(ImageVectorizer.apply)
-      .andThen(new Sampler(100000, conf.seed))
-      val baseFilters = patchExtractor(data.map(_.image))
-      val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
-      val whitener = loadWhitener(featureId, conf.modelDir)
-      numOutputFeatures = conf.filters(0)
-      val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
-      val seed = conf.seed
-      val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
-      accs =  ccap.accs
-      var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
-      pool_accum = pooler.pooling_accum
-      convKernel = convKernel andThen ccap andThen pooler
-      currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
-      currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+    numOutputFeatures = conf.filters(0)
+    val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
+    val seed = conf.seed
+    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
+    accs =  ccap.accs
 
-      numInputFeatures = numOutputFeatures
-      data.count()
-      val outFeatures = currX * currY * numOutputFeatures
-      println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
-      println("OUT FEATURES " +  outFeatures)
+    var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
+    pool_accum = pooler.pooling_accum
+    convKernel = convKernel andThen ccap andThen pooler
+    currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+    currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
 
-      val featurizer = ImageExtractor andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
-      val convTestBegin = System.nanoTime
-      var XTest = featurizer(data)
-      val count = XTest.count()
-      val convTestTime  = timeElapsed(convTestBegin)
-      println(s"Generating test features took ${convTestTime} secs")
+    numInputFeatures = numOutputFeatures
+    val outFeatures = currX * currY * numOutputFeatures
+    println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
+    println("OUT FEATURES " +  outFeatures)
 
-      println(s"Per image metric breakdown (for last layer):")
-      accs.map(x => println(x.name.get + ":" + x.value/(count)))
-      println(pool_accum.name.get + ":" + pool_accum.value/(count))
-      println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
-      val numFeatures = XTest.take(1)(0).size
-      println(s"numFeatures: ${numFeatures}, count: ${count}")
-      val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
-      println(conf.numClasses)
-      println("VECTORIZING LABELS")
+    val featurizer = ImageExtractor andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
+    val convTestBegin = System.nanoTime
+    var XTest = featurizer(data)
+    val convTestTime  = timeElapsed(convTestBegin)
+    println(s"Generating test features took ${convTestTime} secs")
 
-      val yTest = labelVectorizer(LabelExtractor(data))
-      val model = loadModel(featureId, conf.modelDir, conf)
-      println("Testing finish!")
-      val testPredictions = model.apply(XTest).cache()
+    println(s"Per image metric breakdown (for last layer):")
+    accs.map(x => println(x.name.get + ":" + x.value/(count)))
+    println(pool_accum.name.get + ":" + pool_accum.value/(count))
+    println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
 
-      val yTestPred = MaxClassifier.apply(testPredictions)
+    val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
+    println(conf.numClasses)
+    println("VECTORIZING LABELS")
 
-      val top1TestActual = TopKClassifier(1)(yTest)
-      if (conf.numClasses >= 5) {
-        val top5TestPredicted = TopKClassifier(5)(testPredictions)
-        println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, testPredictions.count())) + "%")
-      }
+    val yTest = labelVectorizer(LabelExtractor(data))
+    println("Testing finish!")
 
-      val top1TestPredicted = TopKClassifier(1)(testPredictions)
-      println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
+    if (conf.saveFeatures) {
+      println("Saving Features")
+      XTest.zip(LabelExtractor(data)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
+        s"${conf.featureDir}ckn_${featureId}_test_features")
+    }
+
+    val testPredictions = model.apply(XTest).cache()
+
+    val yTestPred = MaxClassifier.apply(testPredictions)
+
+    val top1TestActual = TopKClassifier(1)(yTest)
+    if (conf.numClasses >= 5) {
+      val top5TestPredicted = TopKClassifier(5)(testPredictions)
+      println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, testPredictions.count())) + "%")
+    }
+
+    val top1TestPredicted = TopKClassifier(1)(testPredictions)
+    println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
   }
 
   def loadModel(featureId: String, modelDir: String, conf: CKMConf): BlockLinearMapper = {
@@ -121,16 +125,18 @@ object CKMImageNetTest extends Serializable with Logging {
         if (file.getFileName.toString.startsWith(s"${featureId}.model.weights")) {
           files += file
         }
-      FileVisitResult.CONTINUE
+        FileVisitResult.CONTINUE
       }
     })
 
-    val xs: Seq[DenseMatrix[Double]] = files.map { f =>
+    val xsPos: Seq[(Int, DenseMatrix[Double])] = files.map { f =>
+      val modelPos = f.toString.split(".").takeRight(1).head.toInt
       val xVector = loadDenseVector(f.toString)
       /* This is usually blocksize, but the last block may be smaller */
       val rows = xVector.size/numClasses
-      xVector.toDenseMatrix.reshape(numClasses, rows).t
+      (modelPos, xVector.toDenseMatrix.reshape(numClasses, rows).t)
     }
+    val xs = xsPos.sortBy(_._1).map(_._2)
     val interceptPath = s"${modelDir}/${featureId}.model.intercept"
     val bOpt =
       if (Files.exists(Paths.get(interceptPath))) {
