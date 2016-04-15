@@ -79,6 +79,7 @@ object CKMImageNetTest extends Serializable with Logging {
     val featurizer = ImageExtractor andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
     val convTestBegin = System.nanoTime
     var XTest = featurizer(data)
+    XTest.count
     val convTestTime  = timeElapsed(convTestBegin)
     println(s"Generating test features took ${convTestTime} secs")
 
@@ -130,13 +131,16 @@ object CKMImageNetTest extends Serializable with Logging {
     })
 
     val xsPos: Seq[(Int, DenseMatrix[Double])] = files.map { f =>
-      val modelPos = f.toString.split(".").takeRight(1).head.toInt
+      println(s"Processing $f")
+      val modelPos = f.toUri.toString.split("\\.").takeRight(1)(0).toInt
       val xVector = loadDenseVector(f.toString)
       /* This is usually blocksize, but the last block may be smaller */
       val rows = xVector.size/numClasses
       (modelPos, xVector.toDenseMatrix.reshape(numClasses, rows).t)
     }
-    val xs = xsPos.sortBy(_._1).map(_._2)
+    val xsPosSorted = xsPos.sortBy(_._1)
+    xsPosSorted.foreach(x => println(s"Model block ${x._1}"))
+    val xs = xsPosSorted.map(_._2)
     val interceptPath = s"${modelDir}/${featureId}.model.intercept"
     val bOpt =
       if (Files.exists(Paths.get(interceptPath))) {
@@ -196,8 +200,6 @@ object CKMImageNetTest extends Serializable with Logging {
       val yaml = new Yaml(new Constructor(classOf[CKMConf]))
       val appConfig = yaml.load(configtext).asInstanceOf[CKMConf]
       val conf = new SparkConf().setAppName(appConfig.expid)
-      Logger.getLogger("org").setLevel(Level.WARN)
-      Logger.getLogger("akka").setLevel(Level.WARN)
       conf.setIfMissing("spark.master", "local[16]")
       conf.set("spark.driver.maxResultSize", "0")
       conf.setAppName(appConfig.expid)
