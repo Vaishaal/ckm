@@ -158,7 +158,7 @@ object CKMImageNetTest extends Serializable with Logging {
 
   def loadTest(sc: SparkContext, dataset: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
     if (dataset == "imagenet") {
-      ImageNetLoader(sc, s"${dataRoot}/imagenet-validation-brewed",
+      ImageNetLoader(sc, s"${dataRoot}/imagenet-validation",
         s"${labelsRoot}/imagenet-labels").cache
     } else if (dataset == "imagenet-small") {
       ImageNetLoader(sc, s"${dataRoot}/imagenet-validation-brewed-small",
