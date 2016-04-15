@@ -1,6 +1,6 @@
 package utils
 
-import awscala._, s3._
+//import awscala._, s3._
 import java.io._
 
 object ExperimentUtils { 
@@ -18,34 +18,34 @@ object ExperimentUtils {
     snip(xs, targets, Vector.empty)
   }
 
-  def s3KeyToInputStream(bucketName: String,
-    key: String, s3conn : S3) : InputStream = {
-    /* 
-     Convenience function to take a s3 bucket name and a s3 key
-     and return the input stream. 
-     */ 
-
-    val bucket = s3conn.bucket(bucketName)
-
-
-    val RETRIES = 3
-    var current_retry = 0
-
-    var s3obj  = bucket.get.getObject(key)(s3conn)
-
-    while(s3obj.isEmpty) {
-      Thread sleep 1000
-      val s3obj  = bucket.get.getObject(key)(s3conn)
-      if (current_retry > RETRIES) {
-        throw new FileNotFoundException(s"Could not find $key in $bucketName and too many retries")
-      }
-      current_retry += 1
-    }
-
-    val s = s3obj.getOrElse(throw new FileNotFoundException(s"Could not find $key in $bucketName"))
-    s.getObjectContent.asInstanceOf[InputStream]
-
-  }
+  // def s3KeyToInputStream(bucketName: String,
+  //   key: String, s3conn : S3) : InputStream = {
+  //   /* 
+  //    Convenience function to take a s3 bucket name and a s3 key
+  //    and return the input stream. 
+  //    */ 
+  // 
+  //   val bucket = s3conn.bucket(bucketName)
+  // 
+  // 
+  //   val RETRIES = 3
+  //   var current_retry = 0
+  // 
+  //   var s3obj  = bucket.get.getObject(key)(s3conn)
+  // 
+  //   while(s3obj.isEmpty) {
+  //     Thread sleep 1000
+  //     val s3obj  = bucket.get.getObject(key)(s3conn)
+  //     if (current_retry > RETRIES) {
+  //       throw new FileNotFoundException(s"Could not find $key in $bucketName and too many retries")
+  //     }
+  //     current_retry += 1
+  //   }
+  // 
+  //   val s = s3obj.getOrElse(throw new FileNotFoundException(s"Could not find $key in $bucketName"))
+  //   s.getObjectContent.asInstanceOf[InputStream]
+  // 
+  // }
 
   def saveObject[A](obj : A, filename: String) = {
     val file = new FileOutputStream(filename)
