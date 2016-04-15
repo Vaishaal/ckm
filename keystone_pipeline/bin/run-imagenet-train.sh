@@ -3,6 +3,7 @@
 FWDIR="$(cd `dirname $0`/..; pwd)"
 
 export SPARK_HOME=/root/spark
+export KEYSTONE_MEM=150g
 
 DATE=`date +"%Y_%m_%d_%H_%M_%S"`
 
