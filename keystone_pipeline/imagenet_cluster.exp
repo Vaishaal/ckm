@@ -2,7 +2,7 @@
 dataset: imagenet
 expid: imagenet_run
 mode: scala
-seed: 9
+seed: 1238
 numClasses: 1000
 
 # CKM Parameters
@@ -15,9 +15,9 @@ filters: [256]
 whiten: True
 whitenerValue: 0.01
 whitenerOffset: 0.1
-featureDir: /user/vaishaal/
-labelDir: /home/eecs/vaishaal/ckm/mldata/imagenet
-modelDir: /home/eecs/vaishaal/models
+featureDir: hdfs://ip-10-230-9-133.us-west-2.compute.internal:9000/
+labelDir: /root/ckm/mldata/imagenet
+modelDir: /mnt/models
 
 # Solver Params
 solve: True
