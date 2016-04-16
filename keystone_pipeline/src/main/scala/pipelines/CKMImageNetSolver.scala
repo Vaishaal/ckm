@@ -36,30 +36,24 @@ object CKMImageNetSolver extends Serializable with Logging {
     val featureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" + conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
 
     println(featureId)
-    val hadoopConf = sc.hadoopConfiguration
-    val fs = org.apache.hadoop.fs.FileSystem.get(hadoopConf)
-    val exists = fs.exists(new org.apache.hadoop.fs.Path(s"/${conf.featureDir}/ckn_${featureId}_train_features"))
-    println("EXISTS " + exists)
-    println(s"/${conf.featureDir}/ckn_${featureId}_train_features")
-
-    if (!exists) {
-      System.err.println(s"Features not found at ${conf.featureDir}/ckn_${featureId}_train_features")
-    }
-
-    val featurized = CKMFeatureLoader(sc, "/" + conf.featureDir, featureId,  Some(conf.numClasses))
-
+    val featurized = CKMFeatureLoader(sc, conf.featureDir, featureId,  Some(conf.numClasses))
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
     println(conf.numClasses)
     println("VECTORIZING LABELS")
 
     val yTrain = labelVectorizer(featurized.yTrain)
-    val yTest = labelVectorizer(featurized.yTest).map(convert(_, Int).toArray)
+    val yTest = labelVectorizer(featurized.yTest)
     val XTrain = featurized.XTrain
     val XTest = featurized.XTest
-
-    val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+    val reg:Double = conf.reg*XTrain.map(x => sum(x :* x)).reduce(_ + _) * 1.0/XTrain.count()
+    val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, reg, conf.solverWeight).fit(XTrain, yTrain)
 
     println("Training finish!")
+
+    println("Saving model")
+    val xs = model.xs.zipWithIndex
+    xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.reg.${conf.reg}model.weights.${mi._2}"), mi._1, separator = ','))
+    model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.reg.${conf.reg}.intercept"),b.toDenseMatrix, separator = ','))
     val trainPredictions = model.apply(XTrain).cache()
     val yTrainPred = MaxClassifier.apply(trainPredictions)
 
@@ -71,6 +65,22 @@ object CKMImageNetSolver extends Serializable with Logging {
 
     val top1TrainPredicted = TopKClassifier(1)(trainPredictions)
     println("Top 1 train acc is " + (100 - Stats.getErrPercent(top1TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+
+    val testPredictions = model.apply(XTest).cache()
+
+    val yTestPred = MaxClassifier.apply(testPredictions)
+
+    val numTestPredict = testPredictions.count()
+    println("NUM TEST PREDICT " + numTestPredict)
+
+    val top1TestActual = TopKClassifier(1)(yTest)
+    if (conf.numClasses >= 5) {
+      val top5TestPredicted = TopKClassifier(5)(testPredictions)
+      println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, numTestPredict)) + "%")
+    }
+
+    val top1TestPredicted = TopKClassifier(1)(testPredictions)
+    println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
   }
 
   def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
