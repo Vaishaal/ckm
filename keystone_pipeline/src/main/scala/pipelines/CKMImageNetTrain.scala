@@ -69,7 +69,7 @@ object CKMImageNetTrain extends Serializable with Logging {
       val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
       new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
     } else {
-      CKMImageNetTest.loadWhitener(featureId, conf.modelDir)
+      CKMImageNetTest.loadWhitener(conf.patch_sizes(0), conf.modelDir)
     }
 
     val rows = whitener.whitener.rows
@@ -141,8 +141,8 @@ object CKMImageNetTrain extends Serializable with Logging {
     val xs = model.xs.zipWithIndex
     xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.weights.${mi._2}"), mi._1, separator = ','))
     model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.intercept"),b.toDenseMatrix, separator = ','))
-    breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.whitener.matrix"),whitener.whitener, separator = ',')
-    breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
+    breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
+    breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
   }
 
   def loadTrain(sc: SparkContext, dataset: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {

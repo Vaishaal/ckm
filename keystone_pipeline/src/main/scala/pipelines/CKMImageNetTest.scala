@@ -56,11 +56,11 @@ object CKMImageNetTest extends Serializable with Logging {
     var accs: List[Accumulator[Double]] = List()
 
     var pool_accum = sc.accumulator(0.0)
-    val whitener = loadWhitener(featureId, conf.modelDir)
+    val whitener = loadWhitener(conf.patch_sizes(0), conf.modelDir)
 
     val model = loadModel(featureId, conf.modelDir, conf)
 
-    var numOutputFeatures = 0
+    var numOutputFeatures = 1
 
     var numInputFeatures = numChannels
     var currX = xDim
@@ -168,9 +168,9 @@ object CKMImageNetTest extends Serializable with Logging {
   }
 
 
-  def loadWhitener(featureId: String, modelDir: String): ZCAWhitener = {
-    val matrixPath = s"${modelDir}/${featureId}.whitener.matrix"
-    val meansPath = s"${modelDir}/${featureId}.whitener.means"
+  def loadWhitener(patchSize: Double, modelDir: String): ZCAWhitener = {
+    val matrixPath = s"${modelDir}/${patchSize.toInt}.whitener.matrix"
+    val meansPath = s"${modelDir}/${patchSize.toInt}.whitener.means"
     val whitenerVector = loadDenseVector(matrixPath)
     val whitenSize = math.sqrt(whitenerVector.size).toInt
     val whitener = whitenerVector.toDenseMatrix.reshape(whitenSize, whitenSize)
