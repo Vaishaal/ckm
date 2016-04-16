@@ -43,7 +43,12 @@ object CKMImageNetTrain extends Serializable with Logging {
     val uniform = new Uniform(0, 1)
     var numOutputFeatures = 0
 
-    data.count()
+    val numTrain = data.count()
+
+    println(s"NUM TRAIN IMAGES ${numTrain}") 
+
+    val imgsPerPart = data.mapPartitions(part => Iterator.single(part.toArray.length)).collect().mkString(",")
+    println(s"Images per partition ${imgsPerPart}")
 
     val (xDim, yDim, numChannels) = getInfo(data)
     println(s"Info ${xDim}, ${yDim}, ${numChannels}")
@@ -102,7 +107,7 @@ object CKMImageNetTrain extends Serializable with Logging {
     println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
 
     // val numFeatures = XTrain.take(1)(0).size
-    // println(s"numFeatures: ${numFeatures}, count: ${count}")
+    println(s"count: ${count}")
 
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
     println(conf.numClasses)

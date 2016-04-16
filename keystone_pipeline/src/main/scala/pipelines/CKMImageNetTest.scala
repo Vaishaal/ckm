@@ -36,6 +36,19 @@ object CKMImageNetTest extends Serializable with Logging {
   val appName = "CKMImageNetTest"
 
   def run(sc: SparkContext, conf: CKMConf) {
+
+    var data = loadTest(sc, conf.dataset, conf.featureDir, conf.labelDir)
+
+    val count = data.count()
+
+    val (xDim, yDim, numChannels) = getInfo(data)
+    println(s"Info ${xDim}, ${yDim}, ${numChannels}, ${count}")
+
+    val imgsPerPart = data.mapPartitions(part => Iterator.single(part.toArray.length)).collect().mkString(",")
+
+    // Print number of elements in each partition
+    println(s"Images per partition ${imgsPerPart}")
+
     println("RUNNING CKMImageNetTest")
     val featureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" + conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
 
@@ -46,12 +59,6 @@ object CKMImageNetTest extends Serializable with Logging {
     val whitener = loadWhitener(featureId, conf.modelDir)
 
     val model = loadModel(featureId, conf.modelDir, conf)
-
-    var data = loadTest(sc, conf.dataset, conf.featureDir, conf.labelDir)
-    val count = data.count()
-
-    val (xDim, yDim, numChannels) = getInfo(data)
-    println(s"Info ${xDim}, ${yDim}, ${numChannels}")
 
     var numOutputFeatures = 0
 
@@ -79,7 +86,9 @@ object CKMImageNetTest extends Serializable with Logging {
     val featurizer = ImageExtractor andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
     val convTestBegin = System.nanoTime
     var XTest = featurizer(data)
-    XTest.count
+    val count2 = XTest.count
+    println(s"NUM TEST FEATURES ${count}")
+
     val convTestTime  = timeElapsed(convTestBegin)
     println(s"Generating test features took ${convTestTime} secs")
 
@@ -105,10 +114,13 @@ object CKMImageNetTest extends Serializable with Logging {
 
     val yTestPred = MaxClassifier.apply(testPredictions)
 
+    val numTestPredict = testPredictions.count()
+    println("NUM TEST PREDICT " + numTestPredict)
+
     val top1TestActual = TopKClassifier(1)(yTest)
     if (conf.numClasses >= 5) {
       val top5TestPredicted = TopKClassifier(5)(testPredictions)
-      println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, testPredictions.count())) + "%")
+      println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, numTestPredict)) + "%")
     }
 
     val top1TestPredicted = TopKClassifier(1)(testPredictions)
@@ -200,6 +212,12 @@ object CKMImageNetTest extends Serializable with Logging {
       val yaml = new Yaml(new Constructor(classOf[CKMConf]))
       val appConfig = yaml.load(configtext).asInstanceOf[CKMConf]
       val conf = new SparkConf().setAppName(appConfig.expid)
+
+      // Logger.getLogger("org").setLevel(Level.WARN)
+      // Logger.getLogger("akka").setLevel(Level.WARN)
+      // NOTE: ONLY APPLICABLE IF YOU CAN DONE COPY-DIR
+      conf.remove("spark.jars")
+
       conf.setIfMissing("spark.master", "local[16]")
       conf.set("spark.driver.maxResultSize", "0")
       conf.setAppName(appConfig.expid)
