@@ -41,35 +41,36 @@ class MyPooler(
     val numPoolsY = math.ceil((yDim - strideStart).toDouble / stride).toInt
     val patch = new Array[Double]( numPoolsX * numPoolsY * numChannels)
 
+
     // Start at strideStart in (x, y) and
     var x = strideStart
     while (x < xDim) {
       var y = strideStart
       while (y < yDim) {
-        val startX = x - poolSize/2
-        val endX = math.min(x + poolSize/2, xDim)
-        val startY = y - poolSize/2
-        val endY = math.min(y + poolSize/2, yDim)
-        val output_offset = (x - strideStart)/stride * numChannels +
-        (y - strideStart)/stride * numPoolsX * numChannels
+      val startX = x - poolSize/2
+      val endX = math.min(x + poolSize/2, xDim)
+      val startY = y - poolSize/2
+      val endY = math.min(y + poolSize/2, yDim)
+      val output_offset = (x - strideStart)/stride * numChannels +
+      (y - strideStart)/stride * numPoolsX * numChannels
+      var c = 0
+      while (c < numChannels) {
+        val position = c + output_offset
         var s = startX
         while (s < endX) {
           var b = startY
           while (b < endY) {
-            var c = 0
-            while (c < numChannels) {
-              val position = c + output_offset
               val pix = image.get(s, b, c)
               patch(position) += pix/(1.0*poolSize*poolSize)
-              c = c + 1
-            }
             b = b + 1
           }
           s = s + 1
         }
-        y += stride
+        c = c + 1
       }
-      x += stride
+      y += stride
+    }
+    x += stride
     }
     val out = ChannelMajorArrayVectorizedImage(patch, ImageMetadata(numPoolsX, numPoolsY, numChannels))
     pooling_accum += timeElapsed(poolStart)
