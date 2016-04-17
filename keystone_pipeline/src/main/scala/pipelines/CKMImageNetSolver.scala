@@ -45,15 +45,16 @@ object CKMImageNetSolver extends Serializable with Logging {
     val yTest = labelVectorizer(featurized.yTest)
     val XTrain = featurized.XTrain
     val XTest = featurized.XTest
-    val reg:Double = conf.reg*XTrain.map(x => sum(x :* x)).reduce(_ + _) * 1.0/XTrain.count()
-    val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, reg, conf.solverWeight).fit(XTrain, yTrain)
+    val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
 
     println("Training finish!")
 
+    /*
     println("Saving model")
     val xs = model.xs.zipWithIndex
     xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.reg.${conf.reg}model.weights.${mi._2}"), mi._1, separator = ','))
     model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.reg.${conf.reg}.intercept"),b.toDenseMatrix, separator = ','))
+    */
     val trainPredictions = model.apply(XTrain).cache()
     val yTrainPred = MaxClassifier.apply(trainPredictions)
 
