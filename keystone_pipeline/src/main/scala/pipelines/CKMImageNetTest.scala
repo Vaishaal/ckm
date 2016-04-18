@@ -37,6 +37,9 @@ object CKMImageNetTest extends Serializable with Logging {
 
   def run(sc: SparkContext, conf: CKMConf) {
 
+    println("BLAS TEST")
+    val x = DenseMatrix.rand(100,100)
+    val y = x*x
     var data = loadTest(sc, conf.dataset, conf.featureDir, conf.labelDir)
 
     val count = data.count()
@@ -58,7 +61,6 @@ object CKMImageNetTest extends Serializable with Logging {
     var pool_accum = sc.accumulator(0.0)
     val whitener = loadWhitener(conf.patch_sizes(0), conf.modelDir)
 
-    val model = loadModel(featureId, conf.modelDir, conf)
 
     var numOutputFeatures = 1
 
@@ -109,23 +111,26 @@ object CKMImageNetTest extends Serializable with Logging {
       XTest.zip(LabelExtractor(data)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
         s"${conf.featureDir}ckn_${featureId}_test_features")
     }
+    if (conf.solve) {
+      val model = loadModel(featureId, conf.modelDir, conf)
 
-    val testPredictions = model.apply(XTest).cache()
+      val testPredictions = model.apply(XTest).cache()
 
-    val yTestPred = MaxClassifier.apply(testPredictions)
+      val yTestPred = MaxClassifier.apply(testPredictions)
 
-    val numTestPredict = testPredictions.count()
-    println("NUM TEST PREDICT " + numTestPredict)
+      val numTestPredict = testPredictions.count()
+      println("NUM TEST PREDICT " + numTestPredict)
 
-    val top1TestActual = TopKClassifier(1)(yTest)
-    if (conf.numClasses >= 5) {
-      val top5TestPredicted = TopKClassifier(5)(testPredictions)
-      println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, numTestPredict)) + "%")
+      val top1TestActual = TopKClassifier(1)(yTest)
+      if (conf.numClasses >= 5) {
+        val top5TestPredicted = TopKClassifier(5)(testPredictions)
+        println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, numTestPredict)) + "%")
+      }
+
+      val top1TestPredicted = TopKClassifier(1)(testPredictions)
+      println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
     }
-
-    val top1TestPredicted = TopKClassifier(1)(testPredictions)
-    println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
-  }
+    }
 
   def loadModel(featureId: String, modelDir: String, conf: CKMConf): BlockLinearMapper = {
     val files = ArrayBuffer.empty[Path]
@@ -180,7 +185,7 @@ object CKMImageNetTest extends Serializable with Logging {
 
   def loadTest(sc: SparkContext, dataset: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
     if (dataset == "imagenet") {
-      ImageNetLoader(sc, s"${dataRoot}/imagenet-validation",
+      ImageNetLoader(sc, s"${dataRoot}/imagenet-validation-brewed",
         s"${labelsRoot}/imagenet-labels").cache
     } else if (dataset == "imagenet-small") {
       ImageNetLoader(sc, s"${dataRoot}/imagenet-validation-brewed-small",

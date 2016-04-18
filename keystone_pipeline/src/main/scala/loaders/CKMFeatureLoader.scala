@@ -44,8 +44,8 @@ object CKMFeatureLoader {
      (trainText, testText)
   } else {
      println(s"${partitions.get} partitions")
-     val trainText:RDD[String] = sc.textFile(trainPath, partitions.get)
-     val testText:RDD[String] = sc.textFile(testPath, partitions.get)
+     val trainText:RDD[String] = sc.textFile(trainPath, partitions.get).coalesce(partitions.get)
+     val testText:RDD[String] = sc.textFile(testPath, partitions.get).coalesce(partitions.get)
      (trainText, testText)
   }
 
