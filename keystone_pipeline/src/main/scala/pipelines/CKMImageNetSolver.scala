@@ -35,6 +35,10 @@ object CKMImageNetSolver extends Serializable with Logging {
     println("RUNNING CKMImageNetSolver")
     val featureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" + conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
 
+    println("BLAS TEST")
+    val x = DenseMatrix.rand(100,100)
+    val y = x*x
+
     println(featureId)
     val featurized = CKMFeatureLoader(sc, conf.featureDir, featureId,  Some(conf.numClasses))
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
@@ -45,7 +49,7 @@ object CKMImageNetSolver extends Serializable with Logging {
     val yTest = labelVectorizer(featurized.yTest)
     val XTrain = featurized.XTrain
     val XTest = featurized.XTest
-    val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+    val model = new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
 
     println("Training finish!")
 

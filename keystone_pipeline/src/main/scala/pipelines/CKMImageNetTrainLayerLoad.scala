@@ -29,14 +29,19 @@ import scala.reflect.{BeanProperty, ClassTag}
 
 import java.io.{File, BufferedWriter, FileWriter}
 
-object CKMImageNetTrain extends Serializable with Logging {
-  val appName = "CKMImageNetTrain"
+object CKMImageNetTrainLoadLayer extends Serializable with Logging {
+  val appName = "CKMImageNetTrainLoadLayer"
 
   def run(sc: SparkContext, conf: CKMConf) {
-    var data = loadTrain(sc, conf.dataset, conf.featureDir, conf.labelDir)
-    println("RUNNING CKMImageNetTrain")
+    println("RUNNING CKMImageNetTrainLoadLayer")
+    val oldFeatureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + (conf.layerToLoad+1) + "_" + conf.patch_sizes.slice(0,conf.layerToLoad+1).mkString("-") + "_" + conf.bandwidth.slice(0,conf.layerToLoad+1).mkString("-") + "_" + conf.pool.slice(0,conf.layerToLoad+1).mkString("-") + "_" + conf.poolStride.slice(0,conf.layerToLoad+1).mkString("-") + "_" + conf.filters.slice(0,conf.layerToLoad+1).mkString("-")
+    println(s"OLD FEATURE ID: ${oldFeatureId}")
+
     val featureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" + conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
 
+    var data = loadTrain(sc, conf, oldFeatureId,  conf.featureDir, conf.labelDir)
+
+    val currLayer = conf.layerToLoad
     println("BLAS TEST")
     val x = DenseMatrix.rand(100,100)
     val y = x*x
@@ -59,38 +64,21 @@ object CKMImageNetTrain extends Serializable with Logging {
     var accs: List[Accumulator[Double]] = List()
     var pool_accum = sc.accumulator(0.0)
 
-    val whitener = if (!conf.loadWhitener) {
-      val patchExtractor = new Windower(1, conf.patch_sizes(0))
-        .andThen(ImageVectorizer.apply)
-        .andThen(new Sampler(100000, conf.seed))
-
-      val baseFilters = patchExtractor(data.map(_.image))
-      val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
-      new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
-    } else {
-      CKMImageNetTest.loadWhitener(conf.patch_sizes(0), conf.modelDir)
-    }
-
-    val rows = whitener.whitener.rows
-    val cols = whitener.whitener.cols
-    println(s"Whitener Rows :${rows}, Cols: ${cols}")
-
-    numOutputFeatures = conf.filters(0)
-    val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
+    val patchSize = math.pow(conf.patch_sizes(currLayer + 1), 2).toInt
     val seed = conf.seed
 
-    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
+    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(currLayer + 1), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(currLayer + 1), conf.insanity, conf.fastfood)
     accs =  ccap.accs
-    var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
+    var pooler =  new MyPooler(conf.poolStride(currLayer + 1), conf.pool(currLayer + 1), identity, (x:DenseVector[Double]) => mean(x), sc)
     pool_accum = pooler.pooling_accum
     convKernel = convKernel andThen ccap andThen pooler
 
-    currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
-    currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+    currX = math.ceil(((currX  - conf.patch_sizes(currLayer + 1) + 1) - conf.pool(currLayer + 1)/2.0)/conf.poolStride(currLayer + 1)).toInt
+    currY = math.ceil(((currY  - conf.patch_sizes(currLayer + 1) + 1) - conf.pool(currLayer + 1)/2.0)/conf.poolStride(currLayer + 1)).toInt
 
     numInputFeatures = numOutputFeatures
     val outFeatures = currX * currY * numOutputFeatures
-    println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
+    println(s"Layer 1 output, Width: ${currX}, Height: ${currY}")
     println("OUT FEATURES " +  outFeatures)
 
     val featurizer = ImageExtractor andThen convKernel andThen ImageVectorizer andThen new Cacher[DenseVector[Double]]
@@ -105,7 +93,6 @@ object CKMImageNetTrain extends Serializable with Logging {
     println(pool_accum.name.get + ":" + pool_accum.value/(count))
     println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
 
-    // val numFeatures = XTrain.take(1)(0).size
     println(s"count: ${count}")
 
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
@@ -121,7 +108,7 @@ object CKMImageNetTrain extends Serializable with Logging {
     }
     if (conf.solve) {
 
-      val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+      val model = new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
 
       println("Training finish!")
       val trainPredictions = model.apply(XTrain).cache()
@@ -141,21 +128,11 @@ object CKMImageNetTrain extends Serializable with Logging {
       val xs = model.xs.zipWithIndex
       xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.weights.${mi._2}"), mi._1, separator = ','))
       model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.intercept"),b.toDenseMatrix, separator = ','))
-      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
-      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
     }
   }
 
-  def loadTrain(sc: SparkContext, dataset: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
-    if (dataset == "imagenet") {
-      ImageNetLoader(sc, s"${dataRoot}/imagenet-train-brewed",
-        s"${labelsRoot}/imagenet-labels").cache
-    } else if (dataset == "imagenet-small") {
-      ImageNetLoader(sc, s"${dataRoot}/imagenet-train-brewed-small",
-        s"${labelsRoot}/imagenet-small-labels").repartition(200).cache()
-    } else {
-        throw new IllegalArgumentException("Only Imagenet allowed")
-    }
+  def loadTrain(sc: SparkContext, conf: CKMConf, featureId: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
+    CKMLayerLoader(sc, conf.layerToLoad, featureId, conf, Some(conf.numClasses)).train
   }
 
   def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
