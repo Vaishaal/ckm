@@ -188,7 +188,8 @@ object CKMImageNetTrain extends Serializable with Logging {
 
       conf.setIfMissing("spark.master", "local[16]")
       conf.set("spark.driver.maxResultSize", "0")
-      conf.setAppName(appConfig.expid)
+      val featureId = appConfig.seed + "_" + appConfig.dataset + "_" +  appConfig.expid  + "_" + appConfig.layers + "_" + appConfig.patch_sizes.mkString("-") + "_" + appConfig.bandwidth.mkString("-") + "_" + appConfig.pool.mkString("-") + "_" + appConfig.poolStride.mkString("-") + "_" + appConfig.filters.mkString("-")
+      conf.setAppName(featureId)
       val sc = new SparkContext(conf)
       //sc.setCheckpointDir(appConfig.checkpointDir)
       run(sc, appConfig)

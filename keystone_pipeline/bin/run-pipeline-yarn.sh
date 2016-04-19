@@ -34,23 +34,30 @@ export KEYSTONE_MEM
 
 # Set some commonly used config flags on the cluster
 spark-submit \
-  --master yarn \
+  --master yarn-cluster \
   --class $CLASS \
-  --num-executors 12 \
-  --executor-cores 16 \
+  --num-executors 24 \
+  --executor-cores 23 \
   --driver-class-path $JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
-  --driver-library-path /home/eecs/shivaram/openblas-install/lib:$FWDIR/../lib \
-  --conf spark.executor.extraLibraryPath=/home/eecs/shivaram/openblas-install/lib:$FWDIR/../lib \
+  --driver-library-path /opt/amp/gcc/lib64:/opt/amp/openblas/lib:$FWDIR/../lib \
+  --conf spark.executor.extraLibraryPath=/opt/amp/openblas/lib:$FWDIR/../lib \
   --conf spark.executor.extraClassPath=$JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
+  --conf spark.driver.extraClassPath=$JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
+  --conf spark.executorEnv.LD_LIBRARY_PATH=/opt/amp/gcc/lib64:/opt/amp/openblas/lib:$LD_LIBRARY_PATH \
   --conf spark.serializer=org.apache.spark.serializer.JavaSerializer \
-  --conf spark.executorEnv.LD_LIBRARY_PATH=/opt/amp/gcc/lib64:/opt/amp/openblas/lib:$LD_LIBRARY_PATH\
   --conf spark.yarn.executor.memoryOverhead=15300 \
   --conf spark.mlmatrix.treeBranchingFactor=16 \
+  --conf spark.shuffle.reduceLocality.enabled=true \
+  --conf spark.mlmatrix.treeExecutorAgg=true \
+  --conf spark.yarn.am.waitTime=200 \
+  --conf spark.driver.maxResultSize=0 \
+  --conf spark.yarn.maxAppAttempts=1 \
+  --conf spark.yarn.appMasterEnv.OMP_NUM_THREADS=1 \
   --conf spark.network.timeout=600 \
   --conf spark.executorEnv.OMP_NUM_THREADS=1 \
-  --driver-memory 200g \
-  --conf spark.driver.maxResultSize=0 \
-  --executor-memory 200g \
+  --conf spark.storage.memoryFraction=0.8 \
+  --driver-memory 50g \
+  --executor-memory 60g \
   --jars $ASSEMBLYJAR \
   $JARFILE \
   "$@"
