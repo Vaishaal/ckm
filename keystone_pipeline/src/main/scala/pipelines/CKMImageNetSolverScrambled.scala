@@ -27,13 +27,13 @@ import org.yaml.snakeyaml.Yaml
 import scala.reflect.{BeanProperty, ClassTag}
 
 import java.io.{File, BufferedWriter, FileWriter}
-import CKMImageNetTest.loadModel
+import java.util.Random
 
-object CKMImageNetSolver extends Serializable with Logging {
-  val appName = "CKMImageNetSolver"
+object CKMImageNetSolverScrambled extends Serializable with Logging {
+  val appName = "CKMImageNetSolverScrambled"
 
   def run(sc: SparkContext, conf: CKMConf) {
-    println("RUNNING CKMImageNetSolver")
+    println("RUNNING CKMImageNetSolverScrambled")
     val featureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" + conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
 
     println("BLAS TEST")
@@ -41,19 +41,25 @@ object CKMImageNetSolver extends Serializable with Logging {
     val y = x*x
 
     println(featureId)
-    val featurized = CKMFeatureLoader(sc, conf.featureDir, featureId)
+    val featurized = CKMFeatureLoader(sc, conf.featureDir, featureId,  Some(conf.numClasses))
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
     println(conf.numClasses)
     println("VECTORIZING LABELS")
-
-    val yTrain = labelVectorizer(featurized.yTrain)
-    val yTest = labelVectorizer(featurized.yTest)
+    val r = new Random(0)
+    val yTrain = labelVectorizer(featurized.yTrain.map(y => r.nextInt(1000))).cache()
+    val yTest = labelVectorizer(featurized.yTest.map(y => r.nextInt(1000))).cache()
     val XTrain = featurized.XTrain
     val XTest = featurized.XTest
-    var model = new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
+    val model = new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
 
     println("Training finish!")
 
+    /*
+    println("Saving model")
+    val xs = model.xs.zipWithIndex
+    xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.reg.${conf.reg}model.weights.${mi._2}"), mi._1, separator = ','))
+    model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.reg.${conf.reg}.intercept"),b.toDenseMatrix, separator = ','))
+    */
     val trainPredictions = model.apply(XTrain).cache()
     val yTrainPred = MaxClassifier.apply(trainPredictions)
 
@@ -84,13 +90,6 @@ object CKMImageNetSolver extends Serializable with Logging {
   }
 
   def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
-
-  def modelEqual(model1: BlockLinearMapper, model2: BlockLinearMapper) = {
-    val xsEqual = model1.xs.zip(model2.xs).map(x => all(x._1 :== x._2)).reduce(_ && _)
-    val bOptEqual = model1.bOpt.flatMap(x => model2.bOpt.map(y => all(x :== y))).getOrElse(true)
-    val blockSizeEqual = model1.blockSize == model2.blockSize
-    xsEqual && bOptEqual && blockSizeEqual
-  }
 
   /**
    * The actual driver receives its configuration parameters from spark-submit usually.

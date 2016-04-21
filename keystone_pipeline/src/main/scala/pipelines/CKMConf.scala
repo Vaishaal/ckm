@@ -29,6 +29,7 @@ class CKMConf {
   @BeanProperty var  solver: String = "linear"
   @BeanProperty var  insanity: Boolean = false
   @BeanProperty var  saveFeatures: Boolean = false
+  @BeanProperty var  saveModel: Boolean = false
   @BeanProperty var  pool: Array[Int] = Array(2)
   @BeanProperty var  poolStride: Array[Int] = Array(2)
   @BeanProperty var  checkpointDir: String = "/tmp/spark-checkpoint"

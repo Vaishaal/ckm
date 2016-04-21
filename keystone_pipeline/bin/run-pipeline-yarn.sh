@@ -36,8 +36,8 @@ export KEYSTONE_MEM
 spark-submit \
   --master yarn-cluster \
   --class $CLASS \
-  --num-executors 24 \
-  --executor-cores 23 \
+  --num-executors 22 \
+  --executor-cores 24 \
   --driver-class-path $JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
   --driver-library-path /opt/amp/gcc/lib64:/opt/amp/openblas/lib:$FWDIR/../lib \
   --conf spark.executor.extraLibraryPath=/opt/amp/openblas/lib:$FWDIR/../lib \
@@ -55,7 +55,7 @@ spark-submit \
   --conf spark.yarn.appMasterEnv.OMP_NUM_THREADS=1 \
   --conf spark.network.timeout=600 \
   --conf spark.executorEnv.OMP_NUM_THREADS=1 \
-  --conf spark.storage.memoryFraction=0.8 \
+  --conf spark.storage.memoryFraction=0.7 \
   --driver-memory 50g \
   --executor-memory 60g \
   --jars $ASSEMBLYJAR \
