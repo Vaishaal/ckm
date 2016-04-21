@@ -109,7 +109,7 @@ object CKMImageNetTest extends Serializable with Logging {
     if (conf.saveFeatures) {
       println("Saving Features")
       XTest.zip(LabelExtractor(data)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
-        s"${conf.featureDir}ckn_${featureId}_test_features")
+        s"${conf.featureDir}/ckn_${featureId}_test_features")
     }
     if (conf.solve) {
       val model = loadModel(featureId, conf.modelDir, conf)
@@ -153,7 +153,8 @@ object CKMImageNetTest extends Serializable with Logging {
       val xVector = loadDenseVector(f.toString)
       /* This is usually blocksize, but the last block may be smaller */
       val rows = xVector.size/numClasses
-      (modelPos, xVector.toDenseMatrix.reshape(numClasses, rows).t)
+      val transposed = xVector.toDenseMatrix.reshape(numClasses, rows).t.toArray
+      (modelPos, new DenseMatrix(rows, numClasses, transposed))
     }
     val xsPosSorted = xsPos.sortBy(_._1)
     xsPosSorted.foreach(x => println(s"Model block ${x._1}"))
@@ -165,6 +166,8 @@ object CKMImageNetTest extends Serializable with Logging {
       } else {
         None
       }
+    println("XS " + xs)
+    println("bopt " + bOpt)
     new BlockLinearMapper(xs, blockSize, bOpt)
   }
 

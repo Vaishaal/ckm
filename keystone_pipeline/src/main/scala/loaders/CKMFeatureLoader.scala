@@ -39,21 +39,21 @@ object CKMFeatureLoader {
    val testPath = s"${path}/ckn_${feature_id}_test_features"
    val (trainText, testText) =
    if (partitions.isEmpty) {
-     val trainText:RDD[String] = sc.textFile(trainPath)
-     val testText:RDD[String] = sc.textFile(testPath)
-     (trainText, testText)
-  } else {
-     println(s"${partitions.get} partitions")
      val count = sc.defaultParallelism
      val trainText:RDD[String] = sc.textFile(trainPath, count).coalesce(count)
      val testText:RDD[String] = sc.textFile(testPath, count).coalesce(count)
+     (trainText, testText)
+  } else {
+     val trainText:RDD[String] = sc.textFile(trainPath, partitions.get).coalesce(partitions.get)
+     val testText:RDD[String] = sc.textFile(testPath, partitions.get).coalesce(partitions.get)
      (trainText, testText)
   }
 
    val trainPairs: RDD[(DenseVector[Float], Int)] = trainText.map(convertFeature).setName("train").cache
    val testPairs: RDD[(DenseVector[Float], Int)] = testText.map(convertFeature).setName("test").cache
-   trainPairs.count()
-   testPairs.count()
+   val trainCount = trainPairs.count()
+   val testCount = testPairs.count()
+   println(s"NUM TRAIN EXAMPLES: ${trainCount}, NUM TEST EXAMPLES ${testCount}")
    val XTrain = trainPairs.map(x => convert(x._1, Double))
    val XTest = testPairs.map(x => convert(x._1, Double))
    val yTrain = trainPairs.map(_._2)

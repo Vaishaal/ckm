@@ -28,9 +28,13 @@ import org.yaml.snakeyaml.Yaml
 import scala.reflect.{BeanProperty, ClassTag}
 
 import java.io.{File, BufferedWriter, FileWriter}
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file._
+import scala.collection.mutable.ArrayBuffer
+import CKMImageNetTest.loadModel
 
-object CKMImageNetTrainLoadLayer extends Serializable with Logging {
-  val appName = "CKMImageNetTrainLoadLayer"
+object CKMImageNetLayerLoadFull extends Serializable with Logging {
+  val appName = "CKMImageNetLayerLoadFull"
 
    def pairwiseMedian(data: DenseMatrix[Double]): Double = {
        val x = data(0 until data.rows/2, *)
@@ -45,7 +49,7 @@ object CKMImageNetTrainLoadLayer extends Serializable with Logging {
        diff_norm_median
    }
    def run(sc: SparkContext, conf: CKMConf) {
-     println("RUNNING CKMImageNetTrainLoadLayer")
+     println("RUNNING CKMImageNetLayerLoadFull")
      val oldFeatureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + (conf.layerToLoad+1) + "_" + conf.patch_sizes.slice(0,conf.layerToLoad+1).mkString("-") + "_" + conf.bandwidth.slice(0,conf.layerToLoad+1).mkString("-") + "_" + conf.pool.slice(0,conf.layerToLoad+1).mkString("-") + "_" + conf.poolStride.slice(0,conf.layerToLoad+1).mkString("-") + "_" + conf.filters.slice(0,conf.layerToLoad+1).mkString("-")
      println(s"OLD FEATURE ID: ${oldFeatureId}")
 
@@ -85,7 +89,19 @@ object CKMImageNetTrainLoadLayer extends Serializable with Logging {
 
     val patchSize = math.pow(conf.patch_sizes(currLayer + 1), 2).toInt
     val seed = conf.seed
-    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(currLayer + 1), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(currLayer + 1), true, conf.fastfood)
+    val whitener =
+    if (conf.whiten) {
+        val patchExtractor = new Windower(1, conf.patch_sizes(currLayer +1))
+          .andThen(ImageVectorizer.apply)
+          .andThen(new Sampler(1000, conf.seed))
+        val baseFilters = patchExtractor(data.map(_.image))
+        val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
+        Some(new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat))
+      } else {
+        None
+      }
+
+    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(currLayer + 1), currX, currY, numInputFeatures, sc, whitener, conf.whitenerOffset, conf.pool(currLayer + 1), true, conf.fastfood)
     accs =  ccap.accs
     var pooler =  new MyPooler(conf.poolStride(currLayer + 1), conf.pool(currLayer + 1), identity, (x:DenseVector[Double]) => mean(x), sc)
     pool_accum = pooler.pooling_accum
@@ -103,6 +119,8 @@ object CKMImageNetTrainLoadLayer extends Serializable with Logging {
     val convTrainBegin = System.nanoTime
     var XTrain = featurizer(data)
     val count = XTrain.count()
+    data.unpersist(true)
+
     val convTrainTime  = timeElapsed(convTrainBegin)
     println(s"Generating train features took ${convTrainTime} secs")
 
@@ -111,13 +129,20 @@ object CKMImageNetTrainLoadLayer extends Serializable with Logging {
     println(pool_accum.name.get + ":" + pool_accum.value/(count))
     println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
 
-    println(s"count: ${count}")
 
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
     println(conf.numClasses)
     println("VECTORIZING LABELS")
+    var testData = loadTest(sc, conf, oldFeatureId,  conf.featureDir, conf.labelDir)
+    testData.count()
+    val XTest =  featurizer(testData)
+    val testCount = XTest.count()
+    testData.unpersist(true)
+
+    println(s"train count: ${count}, test count: ${testCount}")
 
     val yTrain = labelVectorizer(LabelExtractor(data))
+    val yTest = labelVectorizer(LabelExtractor(testData))
 
     if (conf.saveFeatures) {
       println("Saving Features")
@@ -125,7 +150,6 @@ object CKMImageNetTrainLoadLayer extends Serializable with Logging {
         s"${conf.featureDir}ckn_${featureId}_train_features")
     }
     if (conf.solve) {
-
       val model = new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
 
       println("Training finish!")
@@ -142,6 +166,19 @@ object CKMImageNetTrainLoadLayer extends Serializable with Logging {
       val top1TrainPredicted = TopKClassifier(1)(trainPredictions)
       println("Top 1 train acc is " + (100 - Stats.getErrPercent(top1TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
 
+      val testPredictions = model.apply(XTest).cache()
+      val yTestPred = MaxClassifier.apply(testPredictions)
+
+      val top1TestActual = TopKClassifier(1)(yTest)
+      if (conf.numClasses >= 5) {
+        val top5TestPredicted = TopKClassifier(5)(testPredictions)
+        println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, testPredictions.count())) + "%")
+      }
+
+      val top1TestPredicted = TopKClassifier(1)(testPredictions)
+      println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
+
+
       println("Saving model")
       val xs = model.xs.zipWithIndex
       xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.weights.${mi._2}"), mi._1, separator = ','))
@@ -150,8 +187,17 @@ object CKMImageNetTrainLoadLayer extends Serializable with Logging {
   }
 
   def loadTrain(sc: SparkContext, conf: CKMConf, featureId: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
-    CKMLayerLoader(sc, conf.layerToLoad, featureId, conf, Some(conf.numClasses)).train
+    CKMLayerLoader(sc, conf.layerToLoad, featureId, conf, None).train
   }
+
+  def loadTest(sc: SparkContext, conf: CKMConf, featureId: String, dataRoot: String = "/", labelsRoot: String = "/"): RDD[LabeledImage] = {
+    CKMLayerLoader(sc, conf.layerToLoad, featureId, conf, None).test
+  }
+
+  def loadDenseVector(path: String): DenseVector[Double] = {
+    DenseVector(scala.io.Source.fromFile(path).getLines.toArray.flatMap(_.split(",")).map(_.toDouble))
+  }
+
 
   def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
 

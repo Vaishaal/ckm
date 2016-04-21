@@ -31,21 +31,23 @@ object CKMLayerLoader {
   def computeLayerSpatialInfo(layer:Int, conf: CKMConf): (Int, Int, Int) = {
     var xDim = 256
     var yDim = 256
-    for (i <- 0 until layer) {
+    for (i <- 0 until layer + 1) {
         xDim = math.ceil(((xDim  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(0)).toInt
         yDim = math.ceil(((yDim  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(0)).toInt
     }
     val numChannels = conf.filters(layer)
+    println(s"Info ${xDim}, ${yDim}, ${numChannels}")
     (xDim, yDim, numChannels)
   }
 
   def apply(sc: SparkContext, layer: Int, featureId: String, conf: CKMConf, partitions: Option[Int] = None): Dataset = {
+      val (xDim, yDim, numChannels) = computeLayerSpatialInfo(layer, conf)
+      println(s"prev layer Info ${xDim}, ${yDim}, ${numChannels}")
       val featurized = CKMFeatureLoader(sc, conf.featureDir, featureId, partitions)
       val trainFeatures= featurized.XTrain
       val testFeatures = featurized.XTest
       val yTrain = featurized.yTrain
-      val yTest = featurized.yTrain
-      val (xDim, yDim, numChannels) = computeLayerSpatialInfo(layer, conf)
+      val yTest = featurized.yTest
       val trainImages:RDD[Image] = trainFeatures.map(convertVectorToImage(_, xDim, yDim, numChannels))
       val testImages:RDD[Image] = testFeatures.map(convertVectorToImage(_, xDim, yDim, numChannels))
       val trainLabeledImages:RDD[LabeledImage] = trainImages.zip(yTrain).map(x => LabeledImage(x._1, x._2))
