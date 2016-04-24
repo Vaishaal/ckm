@@ -25,7 +25,7 @@ class MyConvolver(
     imgHeight: Int,
     imgChannels: Int,
     whitener: Option[ZCAWhitener] = None,
-    normalizePatches: Boolean = false,
+    normalizePatches: Boolean = true,
     varConstant: Double = 10.0,
     patchStride: Int = 1)
   extends Transformer[Image, Image] {

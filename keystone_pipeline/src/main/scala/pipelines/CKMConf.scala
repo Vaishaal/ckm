@@ -9,6 +9,7 @@ class CKMConf {
   @BeanProperty var  layers: Int = 1
   @BeanProperty var  filters: Array[Int] = Array(1)
   @BeanProperty var  bandwidth : Array[Double] = Array(1.8)
+  @BeanProperty var  convStride: Array[Int] = Array(1)
   @BeanProperty var  patch_sizes: Array[Int] = Array(5)
   @BeanProperty var  loss: String = "WeightedLeastSquares"
   @BeanProperty var  reg: Double = 0.001

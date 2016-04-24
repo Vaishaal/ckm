@@ -57,7 +57,9 @@ object CKMImageNetSolver extends Serializable with Logging {
     val XTrain = featurized.XTrain
     val XTest = featurized.XTest
 
-    val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+    val reg:Double = conf.reg*XTrain.map(x => sum(x :* x)).reduce(_ + _) * 1.0/XTrain.count()
+
+    val model = new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, reg, conf.solverWeight).fit(XTrain, yTrain)
 
     println("Training finish!")
     val trainPredictions = model.apply(XTrain).cache()
