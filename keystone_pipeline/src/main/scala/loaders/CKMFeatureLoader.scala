@@ -24,11 +24,11 @@ import scala.reflect._
 
 object CKMFeatureLoader {
 
-  def convertFeature(featureString: String): (DenseVector[Double], Int) = {
+  def convertFeature(featureString: String): (DenseVector[Float], Int) = {
      /* Maintain backward compatibility with old featurizations */
      val splitX = featureString.replace("(","").replace(")","").split(",")
      val y = splitX.last.toInt
-     val x = DenseVector(splitX.slice(0,splitX.size - 1).map(_.toDouble))
+     val x = DenseVector(splitX.slice(0,splitX.size - 1).map(_.toFloat))
      (x,y)
   }
 
@@ -39,24 +39,25 @@ object CKMFeatureLoader {
    val testPath = s"${path}/ckn_${feature_id}_test_features"
    val (trainText, testText) =
    if (partitions.isEmpty) {
-     val trainText:RDD[String] = sc.textFile(trainPath)
-     val testText:RDD[String] = sc.textFile(testPath)
+     val count = sc.defaultParallelism
+     val trainText:RDD[String] = sc.textFile(trainPath, count).coalesce(count)
+     val testText:RDD[String] = sc.textFile(testPath, count).coalesce(count)
      (trainText, testText)
   } else {
-     println(s"${partitions.get} partitions")
-     val trainText:RDD[String] = sc.textFile(trainPath, partitions.get)
-     val testText:RDD[String] = sc.textFile(testPath, partitions.get)
+     val trainText:RDD[String] = sc.textFile(trainPath, partitions.get).coalesce(partitions.get)
+     val testText:RDD[String] = sc.textFile(testPath, partitions.get).coalesce(partitions.get)
      (trainText, testText)
   }
 
-   val trainPairs: RDD[(DenseVector[Double], Int)] = trainText.map(convertFeature)
-   val testPairs: RDD[(DenseVector[Double], Int)] = testText.map(convertFeature)
-   val XTrain = trainPairs.map(_._1).cache
-   val XTest = testPairs.map(_._1).cache
-   val yTrain = trainPairs.map(_._2).cache
-   val yTest = testPairs.map(_._2).cache
-   XTrain.count()
-   XTest.count()
+   val trainPairs: RDD[(DenseVector[Float], Int)] = trainText.map(convertFeature).setName("train").cache
+   val testPairs: RDD[(DenseVector[Float], Int)] = testText.map(convertFeature).setName("test").cache
+   val trainCount = trainPairs.count()
+   val testCount = testPairs.count()
+   println(s"NUM TRAIN EXAMPLES: ${trainCount}, NUM TEST EXAMPLES ${testCount}")
+   val XTrain = trainPairs.map(x => convert(x._1, Double))
+   val XTest = testPairs.map(x => convert(x._1, Double))
+   val yTrain = trainPairs.map(_._2)
+   val yTest = testPairs.map(_._2)
    new FeaturizedDataset(XTrain, XTest, yTrain, yTest)
    }
   }

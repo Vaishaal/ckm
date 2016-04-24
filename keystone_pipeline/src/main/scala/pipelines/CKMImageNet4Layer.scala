@@ -28,13 +28,15 @@ import org.yaml.snakeyaml.Yaml
 import scala.reflect.{BeanProperty, ClassTag}
 
 import java.io.{File, BufferedWriter, FileWriter}
+import CKMImageNetTest.loadTest
 
-object CKMImageNetTrain extends Serializable with Logging {
-  val appName = "CKMImageNetTrain"
+object CKMImageNet4Layer extends Serializable with Logging {
+  val appName = "CKMImageNet4Layer"
 
   def run(sc: SparkContext, conf: CKMConf) {
     var data = loadTrain(sc, conf.dataset, conf.featureDir, conf.labelDir)
-    println("RUNNING CKMImageNetTrain")
+    var dataTest = loadTest(sc, conf.dataset, conf.featureDir, conf.labelDir)
+    println("RUNNING CKMImageNet4Layer")
     val featureId = conf.seed + "_" + conf.dataset + "_" +  conf.expid  + "_" + conf.layers + "_" + conf.patch_sizes.mkString("-") + "_" + conf.bandwidth.mkString("-") + "_" + conf.pool.mkString("-") + "_" + conf.poolStride.mkString("-") + "_" + conf.filters.mkString("-")
 
     println("BLAS TEST")
@@ -79,7 +81,7 @@ object CKMImageNetTrain extends Serializable with Logging {
     val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
     val seed = conf.seed
 
-    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood, conf.convStride(0))
+    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
     accs =  ccap.accs
     var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
     pool_accum = pooler.pooling_accum
@@ -89,7 +91,28 @@ object CKMImageNetTrain extends Serializable with Logging {
     currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
 
     numInputFeatures = numOutputFeatures
+
+    for (i <- 1 until conf.layers) {
+      numOutputFeatures = conf.filters(i)
+      val patchSize = math.pow(conf.patch_sizes(i), 2).toInt
+      val seed = conf.seed + i
+      val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(i), conf.insanity, conf.fastfood)
+
+      if (conf.pool(i) > 1) {
+        var pooler =  new Pooler(conf.poolStride(i), conf.pool(i), identity, (x:DenseVector[Double]) => mean(x))
+        convKernel = convKernel andThen ccap andThen pooler
+      } else {
+        convKernel = convKernel andThen ccap
+      }
+      // (8 - 3 + 1)
+      currX = math.ceil(((currX  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
+      currY = math.ceil(((currY  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(i)).toInt
+      println(s"Layer ${i} output, Width: ${currX}, Height: ${currY}")
+      numInputFeatures = numOutputFeatures
+    }
     val outFeatures = currX * currY * numOutputFeatures
+    val featurizer1 = ImageExtractor  andThen convKernel
+    val featurizer2 = ImageVectorizer andThen new Cacher[DenseVector[Double]]
     println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
     println("OUT FEATURES " +  outFeatures)
 
@@ -106,18 +129,21 @@ object CKMImageNetTrain extends Serializable with Logging {
     println("Total Time (for last layer): " + (accs.map(x => x.value/(count)).reduce(_ + _) +  pool_accum.value/(count)))
 
     // val numFeatures = XTrain.take(1)(0).size
-    println(s"count: ${count}")
+    println(s"NUM TRAIN FEATURES: ${count}")
+    println(s"NUM TEST FEATURES ${count}")
 
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
-    println(conf.numClasses)
-    println("VECTORIZING LABELS")
-
     val yTrain = labelVectorizer(LabelExtractor(data))
+    var XTest = featurizer(dataTest)
+    val yTest = labelVectorizer(LabelExtractor(dataTest))
+    val count2 = XTest.count
 
 
     if (conf.saveFeatures) {
       println("Saving Features")
       XTrain.zip(LabelExtractor(data)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
+        s"${conf.featureDir}/ckn_${featureId}_train_features")
+      XTest.zip(LabelExtractor(data)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
         s"${conf.featureDir}/ckn_${featureId}_train_features")
       breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
       breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
@@ -132,18 +158,23 @@ object CKMImageNetTrain extends Serializable with Logging {
       val yTrainPred = MaxClassifier.apply(trainPredictions)
 
       val top1TrainActual = TopKClassifier(1)(yTrain)
-      if (conf.numClasses >= 5) {
-        val top5TrainPredicted = TopKClassifier(5)(trainPredictions)
-        println("Top 5 train acc is " + (100 - Stats.getErrPercent(top5TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
-      }
+      val top5TrainPredicted = TopKClassifier(5)(trainPredictions)
+      println("Top 5 train acc is " + (100 - Stats.getErrPercent(top5TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
 
       val top1TrainPredicted = TopKClassifier(1)(trainPredictions)
       println("Top 1 train acc is " + (100 - Stats.getErrPercent(top1TrainPredicted, top1TrainActual, trainPredictions.count())) + "%")
+      val testPredictions = model.apply(XTest).cache()
 
-      println("Saving model")
-      val xs = model.xs.zipWithIndex
-      xs.map(mi => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.weights.${mi._2}"), mi._1, separator = ','))
-      model.bOpt.map(b => breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${featureId}.model.intercept"),b.toDenseMatrix, separator = ','))
+      val yTestPred = MaxClassifier.apply(testPredictions)
+
+      val numTestPredict = testPredictions.count()
+      println("NUM TEST PREDICT " + numTestPredict)
+
+      val top1TestActual = TopKClassifier(1)(yTest)
+      val top5TestPredicted = TopKClassifier(5)(testPredictions)
+      println("Top 5 test acc is " + (100 - Stats.getErrPercent(top5TestPredicted, top1TestActual, numTestPredict)) + "%")
+      val top1TestPredicted = TopKClassifier(1)(testPredictions)
+      println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
     }
   }
 

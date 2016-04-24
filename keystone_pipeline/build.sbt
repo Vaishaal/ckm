@@ -28,30 +28,46 @@ libraryDependencies ++= Seq(
   "gov.nasa.gsfc.heasarc" % "nom-tam-fits" % "1.14.0-SNAPSHOT",
   "net.imagej" % "imagej" % "2.0.0-rc-42" exclude("io.scif", "scifio"),
   "com.google.protobuf" % "protobuf-java" % "2.4.1",
-  "net.jafama" % "jafama" % "2.1.0",
-  "org.yaml" % "snakeyaml" % "1.16",
-  "org.apache.commons" % "commons-csv" % "1.2"
+  "net.jafama" % "jafama" % "2.1.0"
 )
 
+
+
 {
-  val defaultSparkVersion = "1.3.1"
+  val defaultSparkVersion = "1.5.0-cdh5.5.1"
   val sparkVersion =
     scala.util.Properties.envOrElse("SPARK_VERSION", defaultSparkVersion)
   val excludeHadoop = ExclusionRule(organization = "org.apache.hadoop")
   val excludeSpark = ExclusionRule(organization = "org.apache.spark")
   libraryDependencies ++= Seq(
-    "org.apache.spark" % "spark-core_2.10" % sparkVersion % "provided" excludeAll(excludeHadoop),
-    "org.apache.spark" % "spark-mllib_2.10" % sparkVersion % "provided" excludeAll(excludeHadoop),
-    "org.apache.spark" % "spark-sql_2.10" % sparkVersion % "provided" excludeAll(excludeHadoop),
-    "edu.berkeley.cs.amplab" % "keystoneml_2.10" % "0.3.0" excludeAll(excludeHadoop, excludeSpark)
+    "org.apache.spark" % "spark-core_2.10" % sparkVersion excludeAll(excludeHadoop),
+    "org.apache.spark" % "spark-mllib_2.10" % sparkVersion excludeAll(excludeHadoop),
+    "org.apache.spark" % "spark-sql_2.10" % sparkVersion excludeAll(excludeHadoop),
+    "edu.berkeley.cs.amplab" % "keystoneml_2.10" % "0.3.1-SNAPSHOT" excludeAll(excludeHadoop, excludeSpark), 
+    "org.yaml" % "snakeyaml" % "1.16",
+    "org.apache.commons" % "commons-csv" % "1.2",
+    "com.amazonaws" % "aws-java-sdk" % "1.9.40",
+    "com.github.seratch" %% "awscala" % "0.5.+",
+    "net.jafama" % "jafama" % "2.1.0"
   )
 }
 
+libraryDependencies ++= Seq(
+    "com.github.melrief" %% "purecsv" % "0.0.4"
+  , compilerPlugin("org.scalamacros" % "paradise" % "2.0.1" cross CrossVersion.full)
+)
+
+dependencyOverrides ++= Set(
+  "com.amazonaws" % "aws-java-sdk" % "1.9.40",
+  "com.amazonaws" % "aws-java-sdk-core" % "1.9.40",
+  "com.amazonaws" % "aws-java-sdk-s3" % "1.9.40"
+)
+
 {
-  val defaultHadoopVersion = "2.0.0-mr1-cdh4.2.0"
+  val defaultHadoopVersion = "2.6.0-cdh5.5.1"
   val hadoopVersion =
     scala.util.Properties.envOrElse("SPARK_HADOOP_VERSION", defaultHadoopVersion)
-  libraryDependencies ++= Seq(
+  libraryDependencies ++= Seq("org.apache.hadoop" % "hadoop-aws" % hadoopVersion,
     "org.apache.hadoop" % "hadoop-client" % hadoopVersion)
 }
 
@@ -81,7 +97,7 @@ mergeStrategy in assembly <<= (mergeStrategy in assembly) { (old) =>
   }
 }
 
-assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false)
+assemblyOption in assembly := (assemblyOption in assembly).value.copy(includeScala = false, includeDependency = false)
 
 test in assembly := {}
 
