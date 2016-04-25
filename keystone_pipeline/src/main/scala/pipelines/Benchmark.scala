@@ -64,7 +64,7 @@ object Benchmark extends Serializable with Logging {
         numOutputFeatures = conf.filters(0)
         val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
         val seed = conf.seed
-        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
+        val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood, conf.convStride(0))
         accs =  ccap.accs
         val ccap_old = new CC_old(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
         if (conf.pool(0) > 1) {
@@ -77,8 +77,8 @@ object Benchmark extends Serializable with Logging {
           convKernel = convKernel andThen ccap
           convKernel_old = convKernel_old andThen ccap
         }
-        currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
-        currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+        currX = math.ceil((((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0))/conf.convStride(0)).toInt
+        currY = math.ceil((((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0))/conf.convStride(0)).toInt
 
         println(s"Layer 0 output, Width: ${currX}, Height: ${currY}")
         numInputFeatures = numOutputFeatures
@@ -100,12 +100,14 @@ object Benchmark extends Serializable with Logging {
       var XTrain_old = featurizer_old(data.train)
       val count_old = XTrain_old.count()
       val convTrainTime_old  = timeElapsed(convTrainBegin_old)
-      val correct = XTrain_old.zip(XTrain).map(x => Stats.aboutEq(x._1, x._2, 1e-4)).reduce(_ && _)
       println("Num output features " + outFeatures)
-      println("XTrain sum" + XTrain.map(sum(_)).reduce(_ + _))
-      println("XTrain old sum" + XTrain_old.map(sum(_)).reduce(_ + _))
-      assert(correct)
-      println(s"Correctness is: ${correct}")
+      if (conf.convStride(0) == 1) {
+        println("XTrain sum" + XTrain.map(sum(_)).reduce(_ + _))
+        println("XTrain old sum" + XTrain_old.map(sum(_)).reduce(_ + _))
+        val correct = XTrain_old.zip(XTrain).map(x => Stats.aboutEq(x._1, x._2, 1e-4)).reduce(_ && _)
+        assert(correct)
+        println(s"Correctness is: ${correct}")
+      }
       println(s"Old featurization took ${convTrainTime_old} secs, new featurizaiton ook ${convTrainTime} secs")
       println(s"Per image metric breakdown:")
       accs.map(x => println(x.name.get + ":" + x.value/(count)))
