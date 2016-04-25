@@ -67,6 +67,8 @@ object CKMImageNetTrain extends Serializable with Logging {
       val baseFilters = patchExtractor(data.map(_.image))
       val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
       new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
+      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
+      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
     } else {
       CKMImageNetTest.loadWhitener(conf.patch_sizes(0), conf.modelDir)
     }
@@ -119,8 +121,6 @@ object CKMImageNetTrain extends Serializable with Logging {
       println("Saving Features")
       XTrain.zip(LabelExtractor(data)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
         s"${conf.featureDir}/ckn_${featureId}_train_features")
-      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
-      breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
     }
     if (conf.solve) {
 
