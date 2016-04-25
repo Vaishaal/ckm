@@ -142,6 +142,9 @@ object CC {
     accs(0) += timeElapsed(makePatchesStart)
 
 
+    val outWidth = math.ceil(resWidth/patchStride).toInt
+    val outHeight = math.ceil(resHeight/patchStride).toInt
+
     val whiteningStart = System.nanoTime()
     var whitenedImage: DenseMatrix[Double] =
     whitener match  {
@@ -167,7 +170,7 @@ object CC {
       MatrixUtils.rowsToMatrix(ff_out)
     } getOrElse {
       val dgemmStart = System.nanoTime()
-      val convRes = convert(convert(whitenedImage, Float) * convert((new DenseMatrix(out, in, convolutions)).t, Float), Double)
+      val convRes = whitenedImage * (new DenseMatrix(out, in, convolutions)).t
       accs(3) += timeElapsed(dgemmStart)
       val phaseStart = System.nanoTime()
       accs(4) += timeElapsed(phaseStart)
@@ -196,7 +199,7 @@ object CC {
     val imCreateStart = System.nanoTime()
     val res = new RowMajorArrayVectorizedImage(
       convRes.data,
-      ImageMetadata(resWidth, resHeight, out))
+      ImageMetadata(outWidth, outHeight, out))
     accs(7) += timeElapsed(imCreateStart)
     res
   }
@@ -303,7 +306,7 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
       ): Iterator[Image] = {
 
     val outWidth = math.ceil(resWidth/patchStride).toInt
-    val outHeight = math.ceil(resWidth/patchStride).toInt
+    val outHeight = math.ceil(resHeight/patchStride).toInt
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
       implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
     val gaussian = new Gaussian(0, 1)

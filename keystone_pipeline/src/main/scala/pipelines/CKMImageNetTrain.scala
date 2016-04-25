@@ -85,8 +85,8 @@ object CKMImageNetTrain extends Serializable with Logging {
     pool_accum = pooler.pooling_accum
     convKernel = convKernel andThen ccap andThen pooler
 
-    currX = math.ceil(((currX  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
-    currY = math.ceil(((currY  - conf.patch_sizes(0) + 1) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+    currX = math.ceil(((currX  - conf.patch_sizes(0) + 1)/conf.convStride(0) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
+    currY = math.ceil(((currY  - conf.patch_sizes(0) + 1)/conf.convStride(0) - conf.pool(0)/2.0)/conf.poolStride(0)).toInt
 
     numInputFeatures = numOutputFeatures
     val outFeatures = currX * currY * numOutputFeatures
