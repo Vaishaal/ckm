@@ -13,15 +13,11 @@ class CKMConf {
   @BeanProperty var  patch_sizes: Array[Int] = Array(5)
   @BeanProperty var  loss: String = "WeightedLeastSquares"
   @BeanProperty var  reg: Double = 0.001
-  @BeanProperty var  numClasses: Int = 10
+  @BeanProperty var  numClasses: Int = 1000
   @BeanProperty var  yarn: Boolean = true
   @BeanProperty var  solverWeight: Double = 0
-  @BeanProperty var  cosineSolver: Boolean = false
-  @BeanProperty var  cosineFeatures: Int = 40000
-  @BeanProperty var  cosineGamma: Double = 1e-8
   @BeanProperty var  kernelGamma: Double = 5e-5
   @BeanProperty var  blockSize: Int = 4000
-  @BeanProperty var  numBlocks: Int = 2
   @BeanProperty var  numIters: Int = 2
   @BeanProperty var  whiten: Boolean = false
   @BeanProperty var  whitenerValue: Double =  0.1
@@ -45,4 +41,39 @@ class CKMConf {
   @BeanProperty var  loadLayer: Boolean = false
   @BeanProperty var  layerToLoad: Int = 0
 }
+
+object CKMConf { val LEGACY_CUTOFF: Int = 1240
+
+  def genFeatureId(conf: CKMConf, legacy:Boolean = false) = {
+    /* Any random seed below 1240 is considered legacy mode */
+   val featureId =
+     if (legacy) {
+       conf.seed + "_" +
+       conf.dataset + "_" +
+       conf.expid  + "_" +
+       conf.layers + "_" +
+       conf.patch_sizes.mkString("-") + "_" +
+       conf.bandwidth.mkString("-") + "_" +
+       conf.pool.mkString("-") + "_" +
+       conf.poolStride.mkString("-") + "_" +
+       conf.filters.mkString("-")
+     } else {
+       val fastFood = if (conf.fastfood) "Fastfood_" else ""
+       val augment = if (conf.augment) "Augment_" else ""
+       conf.seed + "_" +
+       conf.dataset + "_" +
+       conf.layers + "_" +
+       fastFood +
+       augment +
+       conf.patch_sizes.slice(0,conf.layers).mkString("-") + "_" +
+       conf.convStride.slice(0,conf.layers).mkString("-") + "_" +
+       conf.bandwidth.slice(0,conf.layers).mkString("-") + "_" +
+       conf.pool.slice(0,conf.layers).mkString("-") + "_" +
+       conf.poolStride.slice(0,conf.layers).mkString("-") + "_" +
+       conf.filters.slice(0,conf.layers).mkString("-")
+     }
+     featureId
+  }
+}
+
 
