@@ -45,8 +45,10 @@ class CC(
 
   val resWidth = imgWidth - convSize + 1
   val resHeight = imgHeight - convSize + 1
-  val outX = math.ceil((resWidth - (poolSize/2)).toDouble / poolSize).toInt
-  val outY = math.ceil((resHeight- (poolSize/2)).toDouble / poolSize).toInt
+
+  val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt
+  val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt
+
   val make_patches_accum = sc.accumulator(0.0, "Make patches:")
   val norm_accum = sc.accumulator(0.0, "Norm")
   val whitening_accum = sc.accumulator(0.0, "Whitening")
@@ -58,7 +60,8 @@ class CC(
   val accs = List(make_patches_accum, whitening_accum, norm_accum, dgemm_accum, phase_accum, cosine_accum, insanity_accum, image_create_accum)
 
   override def apply(in: RDD[Image]): RDD[Image] = {
-    println(s"Convolve: ${resWidth}, ${resHeight}, ${numOutputFeatures}")
+    println(s"Convolve: ${outWidth}, ${outHeight}, ${numOutputFeatures}")
+    println(s"Reswidth: ${resWidth}, ${resWidth}, ${numOutputFeatures}")
     println(s"Input: ${imgWidth}, ${imgHeight}, ${imgChannels}")
     println(s"First pixel ${in.take(1)(0).get(0,0,0)}")
 
@@ -260,6 +263,11 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
       whitener: Option[ZCAWhitener],
       patchStride: Int): DenseMatrix[Double] = {
     var x,y,chan,pox,poy,py,px = 0
+    println("PATCHMAT ROWS: " + patchMat.rows)
+    println("PATCHMAT COLS: " + patchMat.cols)
+    println("RES WIDTH: " + resWidth)
+    println("RES HEIGHT: " + resHeight)
+
     poy = 0
     while (poy < convSize) {
       pox = 0
@@ -271,7 +279,7 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
             chan = 0
             while (chan < imgChannels) {
               px = chan + pox*imgChannels + poy*imgChannels*convSize
-              py = math.ceil((x/patchStride + y*resWidth/(patchStride*patchStride))).toInt
+              py = x/patchStride + y*resWidth/(patchStride*patchStride)
               patchMat(py, px) = img.get(x+pox, y+poy, chan)
               chan+=1
             }
@@ -305,8 +313,8 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
       accs: List[Accumulator[Double]]
       ): Iterator[Image] = {
 
-    val outWidth = math.ceil(resWidth/patchStride).toInt
-    val outHeight = math.ceil(resHeight/patchStride).toInt
+    val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt
+    val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
       implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
     val gaussian = new Gaussian(0, 1)
