@@ -18,8 +18,8 @@ class CKMConf {
   @BeanProperty var  solverWeight: Double = 0
   @BeanProperty var  kernelGamma: Double = 5e-5
   @BeanProperty var  blockSize: Int = 4000
-  @BeanProperty var  numIters: Int = 2
-  @BeanProperty var  whiten: Boolean = false
+  @BeanProperty var  numIters: Int = 1
+  @BeanProperty var  whiten: Array[Boolean] = Array(false)
   @BeanProperty var  whitenerValue: Double =  0.1
   @BeanProperty var  whitenerOffset: Double = 0.001
   @BeanProperty var  solve: Boolean = true
@@ -42,7 +42,7 @@ class CKMConf {
   @BeanProperty var  layerToLoad: Int = 0
 }
 
-object CKMConf { val LEGACY_CUTOFF: Int = 1240
+object CKMConf { val LEGACY_CUTOFF: Int = 1250
 
   def genFeatureId(conf: CKMConf, legacy:Boolean = false) = {
     /* Any random seed below 1240 is considered legacy mode */
@@ -70,7 +70,8 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1240
        conf.bandwidth.slice(0,conf.layers).mkString("-") + "_" +
        conf.pool.slice(0,conf.layers).mkString("-") + "_" +
        conf.poolStride.slice(0,conf.layers).mkString("-") + "_" +
-       conf.filters.slice(0,conf.layers).mkString("-")
+       conf.filters.slice(0,conf.layers).mkString("-") + "_" + 
+       conf.whiten.slice(0,conf.layers).mkString("-")
      }
      featureId
   }

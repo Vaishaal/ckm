@@ -45,75 +45,97 @@ object CKMDeepImageNet extends Serializable with Logging {
     var xDim = 256
     var yDim = 256
     var numChannels = 3
+    println("LAYER TO LOAD " + conf.layerToLoad)
+    println("LOAD LAYER " + conf.loadLayer)
+    val (train, test, startLayer) =
+      if (conf.loadLayer) {
+        val numLayers = conf.layers
+        conf.layers = (conf.layerToLoad + 1)
+        val oldFeatureId = CKMConf.genFeatureId(conf, conf.seed < CKMConf.LEGACY_CUTOFF)
 
-    /* First load ze data */
-    val train = ImageNetLoader(sc, s"${conf.featureDir}/imagenet-train-brewed",
-      s"${conf.labelDir}/imagenet-labels").cache
+        val oldLayers = CKMLayerLoader(sc, conf.layerToLoad, oldFeatureId, conf, None)
+        val train = oldLayers.train
+        val test = oldLayers.test
+        conf.layers = numLayers
+        (train, test, conf.layerToLoad)
+      } else {
+        /* First load ze data */
+       val train = ImageNetLoader(sc, s"${conf.featureDir}/imagenet-train-brewed",
+         s"${conf.labelDir}/imagenet-labels").cache
 
-    val test = ImageNetLoader(sc, s"${conf.featureDir}/imagenet-validation-brewed",
-      s"${conf.labelDir}/imagenet-labels").cache
+       val test = ImageNetLoader(sc, s"${conf.featureDir}/imagenet-validation-brewed",
+         s"${conf.labelDir}/imagenet-labels").cache
+       (train, test, 0)
+      }
+      /* Layer 1
+       * 11 x 11 patches, stride of 4, pool by 4
+       */
 
+      var layerPatch = conf.patch_sizes(0)
+      var layerPool = conf.pool(0)
+      var layerStride = conf.convStride(0)
+      var layerChannels = numChannels
+      var layerInputFeatures = numChannels*layerPatch*layerPatch
+      var layerOutputFeatures = conf.filters(0)
+      var layerWhitener =
+        if (conf.whiten(0)) {
+          if (conf.loadWhitener) {
+            /* Only the first layer whitener can be read from disk */
+            Some(loadWhitener(layerPatch, conf.modelDir))
+          } else {
+            val layerPatchExtractor = new Windower(1, layerPatch)
+              .andThen(ImageVectorizer.apply)
+              .andThen(new Sampler(10000, conf.seed))
+              val layerSamples = MatrixUtils.rowsToMatrix(layerPatchExtractor(train.map(_.image)))
+              println("Whitening Layer 1")
+              val layerWhitener = Some(new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(layerSamples))
+              val whitener = layerWhitener.get
+              breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
+              breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
+              layerWhitener
+          }
+      } else {
+        None
+      }
+      var layerConvolver = new CC(layerInputFeatures,
+                                   layerOutputFeatures,
+                                   conf.seed,
+                                   conf.bandwidth(0),
+                                   xDim,
+                                   yDim,
+                                   numChannels,
+                                   sc,
+                                   layerWhitener,
+                                   conf.whitenerOffset,
+                                   1,
+                                   conf.insanity,
+                                   false,
+                                   layerStride)
+      var layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
 
-    /* Layer 1
-     * 11 x 11 patches, stride of 4, pool by 4
-     */
+      var layer =
+        if (startLayer == 0) {
 
-    var layerPatch = conf.patch_sizes(0)
-    var layerPool = conf.pool(0)
-    var layerStride = conf.convStride(0)
-    var layerChannels = numChannels
-    var layerInputFeatures = numChannels*layerPatch*layerPatch
-    var layerOutputFeatures = conf.filters(0)
-    var layerWhitener =
-      if (conf.whiten(0)) {
-        if (conf.loadWhitener) {
-          /* Only the first layer whitener can be read from disk */
-          Some(loadWhitener(layerPatch, conf.modelDir))
-        } else {
-          val layerPatchExtractor = new Windower(1, layerPatch)
-            .andThen(ImageVectorizer.apply)
-            .andThen(new Sampler(10000, conf.seed))
-            val layerSamples = MatrixUtils.rowsToMatrix(layerPatchExtractor(train.map(_.image)))
-            println("Whitening Layer 1")
-            val layerWhitener = Some(new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(layerSamples))
-            val whitener = layerWhitener.get
-            breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
-            breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
-            layerWhitener
-        }
-    } else {
-      None
-    }
-    var layerConvolver = new CC(layerInputFeatures,
-                                 layerOutputFeatures,
-                                 conf.seed,
-                                 conf.bandwidth(0),
-                                 xDim,
-                                 yDim,
-                                 numChannels,
-                                 sc,
-                                 layerWhitener,
-                                 conf.whitenerOffset,
-                                 1,
-                                 conf.insanity,
-                                 false,
-                                 layerStride)
-    var layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
-
-    var layer = ImageExtractor andThen layerConvolver andThen layerPooler
+          if (layerPool == 1) {
+            xDim = math.ceil(((xDim - layerPatch + 1)/layerStride)).toInt
+            yDim = math.ceil(((yDim - layerPatch + 1)/layerStride)).toInt
+          } else {
+            xDim = math.ceil(((xDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
+            yDim = math.ceil(((yDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
+          }
+          ImageExtractor andThen layerConvolver andThen layerPooler
+      } else {
+          val metadata = train.first.image.metadata
+          xDim = metadata.xDim
+          yDim = metadata.yDim
+          layerChannels = metadata.numChannels
+          ImageExtractor
+      }
 
     /* Layer 2 - N
      */
-    for (i <- (1 until conf.layers)) {
-
-    if (layerPool == 1) {
-      xDim = math.ceil(((xDim - layerPatch + 1)/layerStride)).toInt
-      yDim = math.ceil(((yDim - layerPatch + 1)/layerStride)).toInt
-    } else {
-      xDim = math.ceil(((xDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
-      yDim = math.ceil(((yDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
-
-    }
+    println("START LAYER " + startLayer)
+    for (i <- (startLayer + 1  until conf.layers)) {
       numChannels = conf.filters(i - 1)
       println(s"LAYER ${i + 1} input: ${xDim} x ${yDim} x ${numChannels}")
 
@@ -126,9 +148,9 @@ object CKMDeepImageNet extends Serializable with Logging {
 
       layerWhitener =
         if (conf.whiten(i)) {
-            val layerPatchExtractor = new Windower(1, layerPatch)
-                                      .andThen(ImageVectorizer.apply)
-                                      .andThen(new Sampler(10000, conf.seed))
+          val layerPatchExtractor = new Windower(1, layerPatch)
+            .andThen(ImageVectorizer.apply)
+            .andThen(new Sampler(10000, conf.seed))
             val layerSamples = MatrixUtils.rowsToMatrix(layerPatchExtractor(layer(train)))
             println("Whitening Layer " + (i+1))
             Some(new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(layerSamples))
@@ -136,36 +158,37 @@ object CKMDeepImageNet extends Serializable with Logging {
             None
           }
 
-      layerConvolver = new CC(layerInputFeatures,
-                                   layerOutputFeatures,
-                                   conf.seed,
-                                   conf.bandwidth(1),
-                                   xDim,
-                                   yDim,
-                                   numChannels,
-                                   sc,
-                                   layerWhitener,
-                                   conf.whitenerOffset,
-                                   layerPool,
-                                   conf.insanity,
-                                   false,
-                                   layerStride)
+          layerConvolver = new CC(layerInputFeatures,
+            layerOutputFeatures,
+            conf.seed,
+            conf.bandwidth(1),
+            xDim,
+            yDim,
+            numChannels,
+            sc,
+            layerWhitener,
+            conf.whitenerOffset,
+            layerPool,
+            conf.insanity,
+            false,
+            layerStride)
 
-      layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
-      if (conf.pool(i) == 1) {
-        layer =  layer andThen layerConvolver
-      } else {
-        layer =  layer andThen layerConvolver andThen layerPooler
-      }
+          layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
+          if (conf.pool(i) == 1) {
+            layer =  layer andThen layerConvolver
+          } else {
+            layer =  layer andThen layerConvolver andThen layerPooler
+          }
+
+          if (layerPool == 1) {
+            xDim = math.ceil(((xDim - layerPatch + 1)/layerStride)).toInt
+            yDim = math.ceil(((yDim - layerPatch + 1)/layerStride)).toInt
+          } else {
+            xDim = math.ceil(((xDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
+            yDim = math.ceil(((yDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
+          }
+          numChannels = conf.filters(conf.layers - 1)
     }
-    if (layerPool == 1) {
-      xDim = math.ceil(((xDim - layerPatch + 1)/layerStride)).toInt
-      yDim = math.ceil(((yDim - layerPatch + 1)/layerStride)).toInt
-    } else {
-      xDim = math.ceil(((xDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
-      yDim = math.ceil(((yDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
-    }
-    numChannels = conf.filters(conf.layers - 1)
 
     println(s"Final Layer dimensions: ${xDim} x ${yDim} x ${numChannels}")
 
@@ -204,8 +227,12 @@ object CKMDeepImageNet extends Serializable with Logging {
       val yTest = labelVectorizer(LabelExtractor(test))
 
       val zippedTrain = XTrain.zip(yTrain).coalesce(sc.defaultParallelism)
-
-      val model = new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(zippedTrain.map(_._1), zippedTrain.map(_._2))
+      val model = 
+      if (conf.solverWeight == 0) {
+        new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
+      } else {
+        new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+      }
 
       println("Training finish!")
       val trainPredictions = model.apply(XTrain).cache()

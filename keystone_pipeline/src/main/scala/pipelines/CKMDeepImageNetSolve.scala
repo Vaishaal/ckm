@@ -44,9 +44,12 @@ object CKMDeepImageNetSolve extends Serializable with Logging {
     val yTest = labelVectorizer(featurized.yTest)
     val XTrain = featurized.XTrain
     val XTest = featurized.XTest
-
-
-    val model = new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
+    val model =
+    if (conf.solverWeight == 0) {
+      new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
+    } else {
+      new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+    }
 
     println("Training finish!")
     val trainPredictions = model.apply(XTrain).cache()
