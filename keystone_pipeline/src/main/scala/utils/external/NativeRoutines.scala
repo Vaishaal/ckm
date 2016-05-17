@@ -18,5 +18,16 @@ class NativeRoutines extends Serializable {
   def fwht(in: Array[Double], length: Int) : Array[Double]
 
   @native
+  def fastfood(gaussian: Array[Double],
+               radamacher: Array[Double],
+               uniform: Array[Double],
+               chiSquared: Array[Double],
+               patchMatrix: Array[Double],
+               seed: Int,
+               outSize: Int,
+               inSize: Int,
+               numPatches: Int) : Array[Double]
+
+  @native
   def cosine(in: Float) : Float
 }
