@@ -18,7 +18,8 @@ class Fastfood(
   val g: DenseVector[Double], // should be out long
   val b: DenseVector[Double], // should be out long
   val out: Int, // Num output features
-  val seed: Int = 10 // rng seed
+  val seed: Int = 10, // rng seed
+  val bandwidth : Double = 1.0 // rng seed
   ) // should be numOutputFeatures by 1
   extends Transformer[DenseVector[Double], DenseVector[Double]] {
 
@@ -36,8 +37,6 @@ class Fastfood(
     val blocks =
       for (i <- List.range(0, out/d)) yield processBlock(inPad, g(i*d until (i+1)*d), B(i*d until (i+1)*d), P.slice(i*d,(i+1)*d).map(_ % d), S(i*d until (i+1)*d))
     var outVector = DenseVector.vertcat(blocks:_*)
-    outVector :+ b
-    cos.inPlace(outVector)
     outVector
   }
 
@@ -45,7 +44,7 @@ class Fastfood(
     val d = in.size
     var W:DenseVector[Double] = FWHT(B :* in)
     val PW:DenseVector[Double] = W(P).toDenseVector
-    S :* FWHT(G :* PW)
+    2*bandwidth/(sqrt(d)) :* S :* FWHT(G :* PW)
   }
 }
 
