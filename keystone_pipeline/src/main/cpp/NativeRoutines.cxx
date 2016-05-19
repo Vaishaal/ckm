@@ -86,10 +86,6 @@ JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_fastfood(
 
   posix_memalign((void**) &out, 32, outSize*numPatches*sizeof(double));
 
-  for (int i = 0; i <= outSize*numPatches; i++) {
-    out[i] = 0xDEADBEEF;
-  }
-
   jdouble* patchMatrixV = env->GetDoubleArrayElements(patchMatrix, 0);
   jdouble* radamacherV = env->GetDoubleArrayElements(radamacher, 0);
   jdouble* uniformV= env->GetDoubleArrayElements(uniform, 0);

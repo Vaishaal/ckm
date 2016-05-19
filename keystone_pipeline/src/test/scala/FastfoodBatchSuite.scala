@@ -135,5 +135,50 @@ class MyFastfoodSuite extends FunSuite {
     println("MAX ERROR (FF BATCH) IS " + maxError)
     assert(maxError <= 1e-1)
     }
+  test("Fastfood should be faster than RKS") {
+    val numPatches = 8*8
+    val patchSize = 2
+    val imgChannels = 1024
+    val numInputFeatures = patchSize*patchSize*imgChannels
+    val numOutputFeatures = 8192
+    val sigma = 0.1
+    val numIters = 10
+
+    implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(3)))
+    val gaussian = new Gaussian(0, 1)
+    val uniform = new Uniform(0, 1)(randBasis)
+    val gaussian2 = new Gaussian(17, 32)
+    val patchMat = DenseMatrix.rand(numPatches, numInputFeatures, gaussian2)
+
+    val gaussian3 = new Gaussian(0, 1)
+    val wf = DenseVector.rand(numOutputFeatures, gaussian)
+    val phase = DenseVector.rand(numOutputFeatures, uniform) :* (2*math.Pi)
+    val ff = new FastfoodBatch(wf, phase, numOutputFeatures, 0, sigma)
+
+    val ffStart = System.nanoTime()
+    var i = 0
+    while (i < numIters) {
+      val ffOut = ff(patchMat)
+      i += 1
+    }
+    val ffTime = timeElapsed(ffStart)/(1.0*numIters)
+
+
+    val w = DenseMatrix.rand(numInputFeatures, numOutputFeatures, gaussian) :* 1.0/(sqrt(2)*sigma)
+
+    val dgemmStart = System.nanoTime()
+    i = 0
+    while (i < numIters) {
+      val randomProduct = patchMat * w
+      i += 1
+    }
+    val dgemmTime = timeElapsed(dgemmStart)/(1.0*numIters)
+
+    println(s"DGEMM TOOK ${dgemmTime} seconds per call")
+    println(s"FF TOOK ${ffTime} seconds per call")
+    assert(dgemmTime >= ffTime)
+  }
+
+  def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
 }
 

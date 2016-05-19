@@ -13,7 +13,7 @@ CC = g++
 UNAME := $(shell uname -sm)
 
 Darwin_x86_64_CFLAGS := -O3
-Linux_x86_64_CFLAGS := -O0 -fPIC -fopenmp -shared -march=native -std=c99 -pedantic -Wall -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes -mavx -g3
+Linux_x86_64_CFLAGS := -O3 -fPIC -fopenmp -shared -march=native -std=c99 -pedantic -Wall -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes -mavx -g3
 
 CFLAGS ?= $($(shell echo "$(UNAME)" | tr \  _)_CFLAGS)
 
