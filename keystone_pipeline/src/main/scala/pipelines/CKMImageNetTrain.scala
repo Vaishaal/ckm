@@ -66,9 +66,10 @@ object CKMImageNetTrain extends Serializable with Logging {
 
       val baseFilters = patchExtractor(data.map(_.image))
       val baseFilterMat = MatrixUtils.rowsToMatrix(baseFilters)
-      new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
+      val whitener = new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(baseFilterMat)
       breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
       breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
+      whitener
     } else {
       CKMImageNetTest.loadWhitener(conf.patch_sizes(0), conf.modelDir)
     }

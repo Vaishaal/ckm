@@ -90,7 +90,7 @@ object CKMImageNetLayerLoadFull extends Serializable with Logging {
     val patchSize = math.pow(conf.patch_sizes(currLayer + 1), 2).toInt
     val seed = conf.seed
     val whitener =
-    if (conf.whiten) {
+    if (conf.whiten(0)) {
         val patchExtractor = new Windower(1, conf.patch_sizes(currLayer +1))
           .andThen(ImageVectorizer.apply)
           .andThen(new Sampler(1000, conf.seed))
