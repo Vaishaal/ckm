@@ -19,7 +19,7 @@ class Fastfood(
   val b: DenseVector[Double], // should be out long
   val out: Int, // Num output features
   val seed: Int = 10, // rng seed
-  val bandwidth : Double = 1.0 // rng seed
+  val sigma: Double = 1.0 // rng seed
   ) // should be numOutputFeatures by 1
   extends Transformer[DenseVector[Double], DenseVector[Double]] {
 
@@ -28,9 +28,7 @@ class Fastfood(
   implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
   var B = DenseVector.rand(out, new Bernoulli(0.5, randBasis)).map(if (_) -1.0 else 1.0)
   val P:IndexedSeq[Int] = randBasis.permutation(out).draw()
-  val Gnorm:Double = pow(norm(g), -0.5)
-  val S = (DenseVector.rand(out, ChiSquared(out)) :^ 0.5) * Gnorm
-
+  val S = (DenseVector.rand(out, ChiSquared(out)) :^ 0.5) :*  1.0/norm(g)
   override def apply(in: DenseVector[Double]): DenseVector[Double] =  {
     val d = FWHT.nextPower2(in.size).toInt
     val inPad = padRight(in, d, 0.0)
@@ -43,8 +41,7 @@ class Fastfood(
   def processBlock(in: DenseVector[Double], G: DenseVector[Double], B: DenseVector[Double], P: IndexedSeq[Int], S: DenseVector[Double]): DenseVector[Double] = {
     val d = in.size
     var W:DenseVector[Double] = FWHT(B :* in)
-    val PW:DenseVector[Double] = W(P).toDenseVector
-    2*bandwidth/(sqrt(d)) :* S :* FWHT(G :* PW)
+    1/(sigma*sqrt(d)) :* S :* FWHT(G :* W)
   }
 }
 

@@ -44,15 +44,21 @@ JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_fwht(
     jdoubleArray input,
     jint length)
 {
-
   jdouble* inputVector = env->GetDoubleArrayElements(input, 0);
-  jdouble* outVector = (jdouble*) malloc(length*sizeof(double));
+  jdouble* outVector;
+  posix_memalign((void**) &outVector, 32, length*sizeof(double));
   memcpy(outVector, inputVector, length*sizeof(double));
   /* TODO: Don't hard code this? */
   FHTDouble(outVector, length, 2048);
   jdoubleArray result = env->NewDoubleArray(length);
   env->SetDoubleArrayRegion(result, 0, length, outVector);
-  free(outVector);
+  /*
+  printf("VECTOR IN C [");
+  for (int i = 0; i < length; i++) {
+    printf("%f ,", outVector[i]);
+  }
+  printf("]\n");
+  */
   return result;
 }
 
@@ -70,7 +76,19 @@ JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_fastfood(
     jint numPatches)
 {
   double* out;
+  int k = 0;
+  /*
+  while (k == 0)
+  {
+    sleep(1);
+  }
+  */
+
   posix_memalign((void**) &out, 32, outSize*numPatches*sizeof(double));
+
+  for (int i = 0; i <= outSize*numPatches; i++) {
+    out[i] = 0xDEADBEEF;
+  }
 
   jdouble* patchMatrixV = env->GetDoubleArrayElements(patchMatrix, 0);
   jdouble* radamacherV = env->GetDoubleArrayElements(radamacher, 0);
@@ -89,27 +107,19 @@ JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_fastfood(
     outM.block(i, 0, inSize, numPatches) = mf;
     outM.block(i, 0, inSize, numPatches).colwise() *=  radamacherVector.segment(i, inSize);
     for (int j = 0; j < numPatches; j += 1) {
-      double* patch = out + (j*inSize);
-      FHTDouble(patch, inSize, 2048);
+      double* patch = out + (j*outSize) + i;
+      int res = FHTDouble(patch, inSize, 2048);
     }
     outM.block(i, 0, inSize, numPatches).colwise() *= gaussianVector.segment(i, inSize);
     for (int j = 0; j < numPatches; j += 1) {
-      double* patch = out + (j*inSize);
-      FHTDouble(patch, inSize, 2048);
+      double* patch = out + (j*outSize) + i;
+      int res = FHTDouble(patch, inSize, 2048);
     }
     outM.block(i, 0, inSize, numPatches).colwise() *= chisquaredVector.segment(i, inSize);
-    // outM.block(i, 0, inSize, numPatches).colwise() += uniformVector.segment(i, inSize);
   }
-
-  /* Cosine
-  for (int i = 0; i < outSize*numPatches; i++) {
-    out[i] = cos(out[i]);
-  }
-  */
 
   jdoubleArray result = env->NewDoubleArray(outSize*numPatches);
   env->SetDoubleArrayRegion(result, 0, outSize*numPatches, out);
-
   free(out);
   return result;
 }
