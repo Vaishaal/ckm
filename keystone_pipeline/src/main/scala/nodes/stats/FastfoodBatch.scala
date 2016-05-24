@@ -39,8 +39,9 @@ class FastfoodBatch(
     val patchMatrixCols = in.t.toArray
     val outArray = extLib.fastfood(g.data, B.data, b.data, S.data, patchMatrixCols, seed, out, in.cols, in.rows)
     val dm = new DenseMatrix(out, in.rows, outArray)
+    val dmt = new DenseMatrix(in.rows, out, dm.t.toArray)
     val scale = 1.0/(sigma*sqrt(in.cols))
-    val batchOut = 1.0/(sigma*sqrt(in.cols)) * dm.t
+    val batchOut = 1.0/(sigma*sqrt(in.cols)) * dmt
     batchOut
   }
 

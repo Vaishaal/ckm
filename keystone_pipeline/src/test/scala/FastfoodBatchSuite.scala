@@ -135,6 +135,7 @@ class MyFastfoodSuite extends FunSuite {
     println("MAX ERROR (FF BATCH) IS " + maxError)
     assert(maxError <= 1e-1)
     }
+
   test("Fastfood should be faster than RKS") {
     val numPatches = 8*8
     val patchSize = 2
