@@ -52,13 +52,7 @@ JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_fwht(
   FHTDouble(outVector, length, 2048);
   jdoubleArray result = env->NewDoubleArray(length);
   env->SetDoubleArrayRegion(result, 0, length, outVector);
-  /*
-  printf("VECTOR IN C [");
-  for (int i = 0; i < length; i++) {
-    printf("%f ,", outVector[i]);
-  }
-  printf("]\n");
-  */
+  free(outVector);
   return result;
 }
 
@@ -117,6 +111,11 @@ JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_fastfood(
   jdoubleArray result = env->NewDoubleArray(outSize*numPatches);
   env->SetDoubleArrayRegion(result, 0, outSize*numPatches, out);
   free(out);
+  env->ReleaseDoubleArrayElements(patchMatrix, patchMatrixV, JNI_ABORT);
+  env->ReleaseDoubleArrayElements(radamacher, radamacherV, JNI_ABORT);
+  env->ReleaseDoubleArrayElements(uniform, uniformV, JNI_ABORT);
+  env->ReleaseDoubleArrayElements(gaussian, gaussianV, JNI_ABORT);
+  env->ReleaseDoubleArrayElements(chiSquared, chiSquaredV, JNI_ABORT);
   return result;
 }
 

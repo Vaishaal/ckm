@@ -32,6 +32,7 @@ class FastfoodBatch(
   var B = DenseVector.rand(out, new Bernoulli(0.5, randBasis)).map(if (_) -1.0 else 1.0)
   val P:IndexedSeq[Int] = randBasis.permutation(out).draw()
   val S = (DenseVector.rand(out, ChiSquared(out)) :^ 0.5) :*  1.0/norm(g)
+  println("CREATING FASTFOOD NODE")
 
   override def apply(in: DenseMatrix[Double]): DenseMatrix[Double] =  {
     assert(FWHT.isPower2(in.cols))
@@ -39,10 +40,12 @@ class FastfoodBatch(
     val patchMatrixCols = in.t.toArray
     val outArray = extLib.fastfood(g.data, B.data, b.data, S.data, patchMatrixCols, seed, out, in.cols, in.rows)
     val dm = new DenseMatrix(out, in.rows, outArray)
+
+    /* TODO: get rid of this copy? */
     val dmt = new DenseMatrix(in.rows, out, dm.t.toArray)
-    val scale = 1.0/(sigma*sqrt(in.cols))
-    val batchOut = 1.0/(sigma*sqrt(in.cols)) * dmt
-    batchOut
+    val scale = 1.0/(sigma)
+    dmt :*= scale
+    dmt
   }
 
   def applyVector(in: DenseVector[Double]): DenseVector[Double] =  {
