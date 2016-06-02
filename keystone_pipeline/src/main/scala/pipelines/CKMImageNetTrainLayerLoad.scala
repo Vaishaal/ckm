@@ -85,7 +85,7 @@ object CKMImageNetTrainLoadLayer extends Serializable with Logging {
 
     val patchSize = math.pow(conf.patch_sizes(currLayer + 1), 2).toInt
     val seed = conf.seed
-    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(currLayer + 1), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(currLayer + 1), true, conf.fastfood)
+    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(currLayer + 1), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(currLayer + 1), true, false)
     accs =  ccap.accs
     var pooler =  new MyPooler(conf.poolStride(currLayer + 1), conf.pool(currLayer + 1), identity, (x:DenseVector[Double]) => mean(x), sc)
     pool_accum = pooler.pooling_accum

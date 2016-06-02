@@ -40,12 +40,10 @@ class FastfoodBatch(
     val patchMatrixCols = in.t.toArray
     val outArray = extLib.fastfood(g.data, B.data, b.data, S.data, patchMatrixCols, seed, out, in.cols, in.rows)
     val dm = new DenseMatrix(out, in.rows, outArray)
-
-    /* TODO: get rid of this copy? */
     val dmt = new DenseMatrix(in.rows, out, dm.t.toArray)
-    val scale = 1.0/(sigma)
-    dmt :*= scale
-    dmt
+    val scale = 1.0/(sigma*sqrt(in.cols))
+    val batchOut = scale * dmt
+    batchOut
   }
 
   def applyVector(in: DenseVector[Double]): DenseVector[Double] =  {

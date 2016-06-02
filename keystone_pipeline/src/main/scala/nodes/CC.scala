@@ -3,7 +3,7 @@ package nodes.images
 import breeze.linalg._
 import breeze.numerics._
 import nodes.learning.ZCAWhitener
-import nodes.stats.Fastfood
+import nodes.stats.FastfoodBatch
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.Accumulator
@@ -133,7 +133,7 @@ object CC {
       convolutions: Array[Double],
       phase: DenseVector[Double],
       insanity: Boolean,
-      fastfood: Option[Fastfood],
+      fastfood: Option[FastfoodBatch],
       out: Int,
       in: Int,
       patchStride: Int,
@@ -169,15 +169,16 @@ object CC {
     accs(2) += timeElapsed(normStart)
     var convRes:DenseMatrix[Double] =
     fastfood.map { ff =>
-      val ff_out = MatrixUtils.matrixToRowArray(whitenedImage).map(ff(_))
-      MatrixUtils.rowsToMatrix(ff_out)
+      val dgemmStart = System.nanoTime()
+      val convRes = ff(whitenedImage)
+      accs(3) += timeElapsed(dgemmStart)
+      convRes
     } getOrElse {
       val dgemmStart = System.nanoTime()
       val convRes = whitenedImage * (new DenseMatrix(out, in, convolutions)).t
       accs(3) += timeElapsed(dgemmStart)
-      val phaseStart = System.nanoTime()
-      accs(4) += timeElapsed(phaseStart)
-
+      convRes
+    }
       val cosStart = System.nanoTime()
       var j = 0
       while (j < convRes.cols) {
@@ -189,15 +190,16 @@ object CC {
         }
         j += 1
       }
+
+
       accs(5) += timeElapsed(cosStart)
 
       if (insanity) {
         val insanityStart = System.nanoTime()
-        //convRes(::,*) :*= patchNorms
+        convRes(::,*) :*= patchNorms
         accs(6) += timeElapsed(insanityStart)
       }
       convRes
-    }
 
     val imCreateStart = System.nanoTime()
     val res = new RowMajorArrayVectorizedImage(
@@ -224,8 +226,9 @@ def l2Norms(X: DenseMatrix[Double], offset: Double): DenseVector[Double] = {
   out
 }
 
-def l2Normalize(X: DenseMatrix[Double], offset: Double) {
+def l2Normalize(X: DenseMatrix[Double], offset: Double): DenseVector[Double] =  {
   var i = 0;
+  val norms = DenseVector.zeros[Double](X.rows)
   while (i < X.rows) {
     var j = 0
     var norm = 0.0;
@@ -240,8 +243,10 @@ def l2Normalize(X: DenseMatrix[Double], offset: Double) {
       X(i,j) = X(i,j)/norm
       j += 1
     }
+    norms(i) = norm
     i += 1
   }
+  norms
 }
 
 
@@ -319,21 +324,21 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
       implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
     val gaussian = new Gaussian(0, 1)
     val uniform = new Uniform(0, 1)
-    val convolutions = 
+    val convolutions =
     if (!fastfood) {
       (DenseMatrix.rand(numOutputFeatures, numInputFeatures, gaussian) :* bandwidth).data
     } else {
-      (DenseVector.rand(numOutputFeatures, gaussian) :* bandwidth).data 
+      DenseVector.rand(numOutputFeatures, gaussian).data
     }
 
     val phase = DenseVector.rand(numOutputFeatures, uniform) :* (2*math.Pi)
-    val ff = 
+    val ff =
       if (fastfood) {
-        Some(new Fastfood(DenseVector(convolutions), phase, numOutputFeatures))
+        val sigma = bandwidth
+        Some(new FastfoodBatch(DenseVector(convolutions), phase, numOutputFeatures, seed, sigma))
       } else {
         None
       }
-
     imgs.map(convolve(_, patchMat, resWidth, resHeight, imgChannels, convSize,
       whitener, whitenerOffset, convolutions, phase, insanity, ff, numOutputFeatures, numInputFeatures, patchStride, accs))
   }

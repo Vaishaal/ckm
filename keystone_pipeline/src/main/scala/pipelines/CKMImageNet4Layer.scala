@@ -81,7 +81,7 @@ object CKMImageNet4Layer extends Serializable with Logging {
     val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
     val seed = conf.seed
 
-    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood)
+    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, false)
     accs =  ccap.accs
     var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)
     pool_accum = pooler.pooling_accum
@@ -96,7 +96,7 @@ object CKMImageNet4Layer extends Serializable with Logging {
       numOutputFeatures = conf.filters(i)
       val patchSize = math.pow(conf.patch_sizes(i), 2).toInt
       val seed = conf.seed + i
-      val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(i), conf.insanity, conf.fastfood)
+      val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(i), currX, currY, numInputFeatures, sc, None, conf.whitenerOffset, conf.pool(i), conf.insanity, false)
 
       if (conf.pool(i) > 1) {
         var pooler =  new Pooler(conf.poolStride(i), conf.pool(i), identity, (x:DenseVector[Double]) => mean(x))

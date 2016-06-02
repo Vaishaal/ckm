@@ -39,8 +39,8 @@ spark-submit \
   --num-executors 22 \
   --executor-cores 24 \
   --driver-class-path $JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
-  --driver-library-path /opt/amp/gcc/lib64:/opt/amp/openblas/lib:$FWDIR/../lib \
-  --conf spark.executor.extraLibraryPath=/opt/amp/openblas/lib:$FWDIR/../lib \
+  --driver-library-path /opt/amp/gcc/lib64:/opt/amp/openblas/lib:$FWDIR/lib \
+  --conf spark.executor.extraLibraryPath=/opt/amp/openblas/lib:$FWDIR/lib \
   --conf spark.executor.extraClassPath=$JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
   --conf spark.driver.extraClassPath=$JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
   --conf spark.executorEnv.LD_LIBRARY_PATH=/opt/amp/gcc/lib64:/opt/amp/openblas/lib:$LD_LIBRARY_PATH \

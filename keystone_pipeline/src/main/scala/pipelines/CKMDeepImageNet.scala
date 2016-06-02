@@ -109,7 +109,7 @@ object CKMDeepImageNet extends Serializable with Logging {
                                    conf.whitenerOffset,
                                    1,
                                    conf.insanity,
-                                   false,
+                                   conf.fastfood(0),
                                    layerStride)
       var layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
 
@@ -161,7 +161,7 @@ object CKMDeepImageNet extends Serializable with Logging {
           layerConvolver = new CC(layerInputFeatures,
             layerOutputFeatures,
             conf.seed,
-            conf.bandwidth(1),
+            conf.bandwidth(i),
             xDim,
             yDim,
             numChannels,
@@ -170,7 +170,7 @@ object CKMDeepImageNet extends Serializable with Logging {
             conf.whitenerOffset,
             layerPool,
             conf.insanity,
-            false,
+            conf.fastfood(i),
             layerStride)
 
           layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
@@ -207,8 +207,13 @@ object CKMDeepImageNet extends Serializable with Logging {
     println(s"FINISHED TRAIN CONVOLUTIONS in took ${timeElapsed(trainStart)} secs")
     if (conf.saveFeatures) {
       println("Saving TRAIN Features")
+     if (conf.float(conf.layers - 1)) {
      XTrain.zip(LabelExtractor(train)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
      s"${conf.featureDir}/ckn_${featureId}_train_features")
+     } else {
+      XTrain.zip(LabelExtractor(train)).map(xy => xy._1.toArray.mkString(",") + "," + xy._2).saveAsTextFile(
+     s"${conf.featureDir}/ckn_${featureId}_train_features")
+    }
      println("Finished saving TRAIN Features")
     }
     val testStart = System.nanoTime()
@@ -216,9 +221,16 @@ object CKMDeepImageNet extends Serializable with Logging {
     XTest.count()
     println(s"FINISHED TEST CONVOLUTIONS in took ${timeElapsed(testStart)} secs")
     if (conf.saveFeatures) {
-      XTest.zip(LabelExtractor(test)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
+      if (conf.float(conf.layers - 1)) {
+        XTest.zip(LabelExtractor(test)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
+          s"${conf.featureDir}/ckn_${featureId}_test_features")
+      } else {
+      XTest.zip(LabelExtractor(test)).map(xy => xy._1.toArray.mkString(",") + "," + xy._2).saveAsTextFile(
         s"${conf.featureDir}/ckn_${featureId}_test_features")
+      }
     }
+    println("FIRST 4 FEATURES" + XTrain.take(4).map(_.slice(0,4)).mkString("\n"))
+    println("Feature Dim: " + XTrain.first.size)
 
 
 

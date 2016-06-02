@@ -26,6 +26,7 @@ class CKMConf {
   @BeanProperty var  solver: String = "linear"
   @BeanProperty var  insanity: Boolean = false
   @BeanProperty var  saveFeatures: Boolean = false
+  @BeanProperty var  float: Array[Boolean] = Array(false, false, false, false)
   @BeanProperty var  saveModel: Boolean = false
   @BeanProperty var  pool: Array[Int] = Array(2)
   @BeanProperty var  poolStride: Array[Int] = Array(2)
@@ -33,7 +34,7 @@ class CKMConf {
   @BeanProperty var  augment: Boolean = false
   @BeanProperty var  augmentPatchSize: Int = 24
   @BeanProperty var  augmentType: String = "random"
-  @BeanProperty var  fastfood: Boolean = false
+  @BeanProperty var  fastfood: Array[Boolean] = Array(false, false, false, false)
   @BeanProperty var  featureDir: String = "/"
   @BeanProperty var  labelDir: String = "/"
   @BeanProperty var  modelDir: String = "/tmp"
@@ -58,11 +59,13 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1250
        conf.poolStride.mkString("-") + "_" +
        conf.filters.mkString("-")
      } else {
-       val fastFood = if (conf.fastfood) "Fastfood_" else ""
+       val fastFood = if (conf.fastfood.slice(0,conf.layers).reduce(_ || _)) "ff_" + conf.fastfood.slice(0, conf.layers).mkString("-") + "_"  else ""
        val augment = if (conf.augment) "Augment_" else ""
+       val float = if (conf.float.slice(0,conf.layers).reduce(_ || _)) "float_" + conf.float.slice(0, conf.layers).mkString("-") + "_"  else ""
        conf.seed + "_" +
        conf.dataset + "_" +
        conf.layers + "_" +
+       float +
        fastFood +
        augment +
        conf.patch_sizes.slice(0,conf.layers).mkString("-") + "_" +

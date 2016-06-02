@@ -10,6 +10,7 @@
 #include <math.h>
 #include <string.h>
 #include <ctime>
+#include <stdexcept>
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -78,7 +79,10 @@ JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_fastfood(
   }
   */
 
-  posix_memalign((void**) &out, 32, outSize*numPatches*sizeof(double));
+  int ret = posix_memalign((void**) &out, 32, outSize*numPatches*sizeof(double));
+  if (ret != 0) {
+    throw std::runtime_error("Ran out of memory!");
+  }
 
   jdouble* patchMatrixV = env->GetDoubleArrayElements(patchMatrix, 0);
   jdouble* radamacherV = env->GetDoubleArrayElements(radamacher, 0);

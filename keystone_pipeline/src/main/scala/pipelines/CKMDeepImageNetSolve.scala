@@ -36,14 +36,21 @@ object CKMDeepImageNetSolve extends Serializable with Logging {
     println("RUNNING CKMDeepImageNetSolve")
 
     val featureId = CKMConf.genFeatureId(conf, conf.seed < CKMConf.LEGACY_CUTOFF)
-
-    val featurized = CKMFeatureLoader(sc, conf.featureDir, featureId)
+    println("FeatureID: " + featureId)
+    val featurized =
+    if (conf.float(conf.layers - 1)) {
+      CKMFloatFeatureLoader(sc, conf.featureDir, featureId)
+    } else {
+      CKMFeatureLoader(sc, conf.featureDir, featureId)
+    }
 
     val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
     val yTrain = labelVectorizer(featurized.yTrain)
     val yTest = labelVectorizer(featurized.yTest)
     val XTrain = featurized.XTrain
     val XTest = featurized.XTest
+    println("FIRST 4 FEATURES" + XTrain.take(4).map(_.slice(0,4)).mkString("\n"))
+    println("Feature Dim: " + XTrain.first.size)
     val model =
     if (conf.solverWeight == 0) {
       new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)

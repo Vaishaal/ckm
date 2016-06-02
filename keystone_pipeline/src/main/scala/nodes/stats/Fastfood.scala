@@ -41,7 +41,7 @@ class Fastfood(
   def processBlock(in: DenseVector[Double], G: DenseVector[Double], B: DenseVector[Double], P: IndexedSeq[Int], S: DenseVector[Double]): DenseVector[Double] = {
     val d = in.size
     var W:DenseVector[Double] = FWHT(B :* in)
-    1/(sigma*sqrt(d)) :* S :* FWHT(G :* W)
+    1.0/sigma :* S :* FWHT(G :* W)
   }
 }
 

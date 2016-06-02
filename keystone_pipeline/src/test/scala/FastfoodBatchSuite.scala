@@ -18,7 +18,7 @@ class MyFastfoodSuite extends FunSuite {
     val imgChannels = 1
     val numInputFeatures = patchSize*patchSize*imgChannels
     val numOutputFeatures = 8192
-    val sigma = 0.1
+    val sigma = 1.0
 
     implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(3)))
     val gaussian = new Gaussian(0, 1)
@@ -42,6 +42,7 @@ class MyFastfoodSuite extends FunSuite {
 
     val randomProduct = patchMat * w
     val outFeatures =  sqrt(2.0/numOutputFeatures) * cos(randomProduct(*, ::) :+ phase)
+    //println(cos(randomProduct(*, ::) :+ phase))
     val outGramMatrix = outFeatures * outFeatures.t
 
     val errorMatrix = abs(outGramMatrix - gaussianGramMatrix)
@@ -59,7 +60,7 @@ class MyFastfoodSuite extends FunSuite {
     val imgChannels = 1
     val numInputFeatures = patchSize*patchSize*imgChannels
     val numOutputFeatures = 8192
-    val sigma = 0.1
+    val sigma = 1.0
 
     implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(3)))
     val gaussian = new Gaussian(0, 1)
@@ -74,6 +75,8 @@ class MyFastfoodSuite extends FunSuite {
     val ffOutArray  = MatrixUtils.matrixToRowArray(patchMat).map(ff(_))
     val ffOut = MatrixUtils.rowsToMatrix(ffOutArray)
     val ffOutFeatures =  sqrt(2.0/numOutputFeatures) * cos(ffOut(*, ::) :+ phase)
+    //println(cos(ffOut(*, ::) :+ phase))
+
     val ffOutGramMatrix = ffOutFeatures * ffOutFeatures.t
 
     /* Compute gaussian gram matrix */
@@ -158,9 +161,11 @@ class MyFastfoodSuite extends FunSuite {
 
     val ffStart = System.nanoTime()
     var i = 0
+    val ffOut =
     while (i < numIters) {
       val ffOut = ff(patchMat)
       i += 1
+      ffOut
     }
     val ffTime = timeElapsed(ffStart)/(1.0*numIters)
 
@@ -169,9 +174,11 @@ class MyFastfoodSuite extends FunSuite {
 
     val dgemmStart = System.nanoTime()
     i = 0
+    val randomProduct =
     while (i < numIters) {
       val randomProduct = patchMat * w
       i += 1
+      randomProduct
     }
     val dgemmTime = timeElapsed(dgemmStart)/(1.0*numIters)
 

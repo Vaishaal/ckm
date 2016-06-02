@@ -71,7 +71,7 @@ object CKMImageNetTest extends Serializable with Logging {
     numOutputFeatures = conf.filters(0)
     val patchSize = math.pow(conf.patch_sizes(0), 2).toInt
     val seed = conf.seed
-    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, conf.fastfood, conf.convStride(0))
+    val ccap = new CC(numInputFeatures*patchSize, numOutputFeatures,  seed, conf.bandwidth(0), currX, currY, numInputFeatures, sc, Some(whitener), conf.whitenerOffset, conf.pool(0), conf.insanity, false, conf.convStride(0))
     accs =  ccap.accs
 
     var pooler =  new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc)

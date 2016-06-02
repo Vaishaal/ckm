@@ -22,17 +22,17 @@ import scala.reflect._
  * @param partitions number of partitions of data
  */
 
-object CKMFeatureLoader {
+object CKMFloatFeatureLoader {
 
-  def convertFeature(featureString: String): (DenseVector[Double], Int) = {
+  def convertFeature(featureString: String): (DenseVector[Float], Int) = {
      /* Maintain backward compatibility with old featurizations */
      val splitX = featureString.replace("(","").replace(")","").split(",")
      val y = splitX.last.toInt
-     val x = DenseVector(splitX.slice(0,splitX.size - 1).map(DoubleParser.parseDouble))
+     val x = DenseVector(splitX.slice(0,splitX.size - 1).map(_.toFloat))
      (x,y)
   }
 
-  def apply(sc: SparkContext, path: String,  feature_id: String, partitions: Option[Int] = None, float: Boolean = false): FeaturizedDataset =
+  def apply(sc: SparkContext, path: String,  feature_id: String, partitions: Option[Int] = None): FeaturizedDataset =
   {
    val trainPath = s"${path}/ckn_${feature_id}_train_features"
    println(trainPath)
@@ -49,24 +49,18 @@ object CKMFeatureLoader {
      (trainText, testText)
   }
 
-   val trainPairs: RDD[(DenseVector[Double], Int)] = trainText.map(convertFeature).setName("train").cache
-   val testPairs: RDD[(DenseVector[Double], Int)] = testText.map(convertFeature).setName("test").cache
-
+   val trainPairs: RDD[(DenseVector[Float], Int)] = trainText.map(convertFeature).setName("train").cache
+   val testPairs: RDD[(DenseVector[Float], Int)] = testText.map(convertFeature).setName("test").cache
    val trainCount = trainPairs.count()
    val testCount = testPairs.count()
    println(s"NUM TRAIN EXAMPLES: ${trainCount}, NUM TEST EXAMPLES ${testCount}")
-   val XTrain = trainPairs.map(x => x._1)
-   val XTest = testPairs.map(x => x._1)
+   val XTrain = trainPairs.map(x => convert(x._1, Double))
+   val XTest = testPairs.map(x => convert(x._1, Double))
    val yTrain = trainPairs.map(_._2)
    val yTest = testPairs.map(_._2)
    new FeaturizedDataset(XTrain, XTest, yTrain, yTest)
    }
   }
-
-case class FeaturizedDataset(val XTrain: RDD[DenseVector[Double]],
-  val XTest: RDD[DenseVector[Double]],
-  val yTrain: RDD[Int],
-  val yTest: RDD[Int])
 
 
 
