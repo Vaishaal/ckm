@@ -35,7 +35,7 @@ object CKMDeepImageNet extends Serializable with Logging {
 
     /* This is a CKM flavor of the CKMImageNet4Layer.scala architechture */
     println(s"Running a ${conf.layers} layer network")
-    val featureId = CKMConf.genFeatureId(conf, conf.seed < CKMConf.LEGACY_CUTOFF)
+    var featureId = CKMConf.genFeatureId(conf, conf.seed < CKMConf.LEGACY_CUTOFF)
     println(s"Legacy mode is: ${conf.seed < CKMConf.LEGACY_CUTOFF}")
     println(s"Running a ${conf.layers} layer network")
     println(s"Feature ID is ${featureId}")
@@ -113,13 +113,14 @@ object CKMDeepImageNet extends Serializable with Logging {
 
       var layer =
         if (startLayer == 0) {
-
+          val cOutHeight = layerConvolver.outHeight
+          val cOutWidth = layerConvolver.outWidth
           if (layerPool == 1) {
-            xDim = math.ceil(((xDim - layerPatch + 1)/layerStride)).toInt
-            yDim = math.ceil(((yDim - layerPatch + 1)/layerStride)).toInt
+            xDim = math.ceil((cOutWidth/layerStride)).toInt
+            yDim = math.ceil((cOutHeight/layerStride)).toInt
           } else {
-            xDim = math.ceil(((xDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
-            yDim = math.ceil(((yDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
+            xDim = math.ceil((cOutWidth/layerStride - layerPool/2.0)/layerPool).toInt
+            yDim = math.ceil((cOutHeight/layerStride - layerPool/2.0)/layerPool).toInt
           }
           ImageExtractor andThen layerConvolver andThen layerPooler
       } else {
@@ -177,12 +178,15 @@ object CKMDeepImageNet extends Serializable with Logging {
             layer =  layer andThen layerConvolver andThen layerPooler
           }
 
+          val cOutHeight = layerConvolver.outHeight
+          val cOutWidth = layerConvolver.outWidth
+
           if (layerPool == 1) {
-            xDim = math.ceil(((xDim - layerPatch + 1)/layerStride)).toInt
-            yDim = math.ceil(((yDim - layerPatch + 1)/layerStride)).toInt
+            xDim = math.ceil((cOutWidth/layerStride)).toInt
+            yDim = math.ceil((cOutHeight/layerStride)).toInt
           } else {
-            xDim = math.ceil(((xDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
-            yDim = math.ceil(((yDim - layerPatch + 1)/layerStride - layerPool/2.0)/layerPool).toInt
+            xDim = math.ceil((cOutWidth/layerStride - layerPool/2.0)/layerPool).toInt
+            yDim = math.ceil((cOutHeight/layerStride - layerPool/2.0)/layerPool).toInt
           }
           numChannels = conf.filters(conf.layers - 1)
     }

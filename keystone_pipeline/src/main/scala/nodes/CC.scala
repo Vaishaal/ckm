@@ -47,8 +47,10 @@ class CC(
   val resWidth = imgWidth - convSize + 1
   val resHeight = imgHeight - convSize + 1
 
-  val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt
-  val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt
+  val padding = if (zeroPad) convSize/2 else 0
+
+  val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt + padding*2
+  val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt + padding*2
 
   val make_patches_accum = sc.accumulator(0.0, "Make patches:")
   val norm_accum = sc.accumulator(0.0, "Norm")
