@@ -40,13 +40,14 @@ class CKMConf {
   @BeanProperty var  modelDir: String = "/tmp"
   @BeanProperty var  loadWhitener: Boolean = false
   @BeanProperty var  loadLayer: Boolean = false
+  @BeanProperty var  hashFeatureId: Boolean = false
   @BeanProperty var  layerToLoad: Int = 0
 }
 
 object CKMConf { val LEGACY_CUTOFF: Int = 1250
 
   def genFeatureId(conf: CKMConf, legacy:Boolean = false) = {
-    /* Any random seed below 1240 is considered legacy mode */
+    /* Any random seed below 1250 is considered legacy mode */
    val featureId =
      if (legacy) {
        conf.seed + "_" +
@@ -76,7 +77,12 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1250
        conf.filters.slice(0,conf.layers).mkString("-") + "_" + 
        conf.whiten.slice(0,conf.layers).mkString("-")
      }
-     featureId
+
+     if(conf.hashFeatureId) {
+       featureId.hashCode().toString()
+     } else {
+       featureId
+     }
   }
 }
 
