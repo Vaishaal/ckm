@@ -18,7 +18,6 @@ import org.apache.log4j.Level
 import org.apache.log4j.Logger
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
-import pipelines.Logging
 import scopt.OptionParser
 import utils.{Image, MatrixUtils, Stats, ImageMetadata, LabeledImage, RowMajorArrayVectorizedImage, ChannelMajorArrayVectorizedImage}
 import workflow.Pipeline
@@ -38,7 +37,7 @@ object CKMDeepImageNetSolve extends Serializable with Logging {
     val featureId = CKMConf.genFeatureId(conf, conf.seed < CKMConf.LEGACY_CUTOFF)
     println("FeatureID: " + featureId)
     val featurized =
-    if (conf.float(conf.layers - 1)) {
+    if (conf.float.contains(conf.layers - 1)) {
       CKMFloatFeatureLoader(sc, conf.featureDir, featureId)
     } else {
       CKMFeatureLoader(sc, conf.featureDir, featureId)

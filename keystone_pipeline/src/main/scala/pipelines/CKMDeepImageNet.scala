@@ -18,7 +18,6 @@ import org.apache.log4j.Level
 import org.apache.log4j.Logger
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
-import pipelines.Logging
 import scopt.OptionParser
 import utils.{Image, MatrixUtils, Stats, ImageMetadata, LabeledImage, RowMajorArrayVectorizedImage, ChannelMajorArrayVectorizedImage}
 import workflow.Pipeline
@@ -73,12 +72,12 @@ object CKMDeepImageNet extends Serializable with Logging {
 
       var layerPatch = conf.patch_sizes(0)
       var layerPool = conf.pool(0)
-      var layerStride = conf.convStride(0)
+      var layerStride = conf.convStride.getOrElse(0, 1)
       var layerChannels = numChannels
       var layerInputFeatures = numChannels*layerPatch*layerPatch
       var layerOutputFeatures = conf.filters(0)
       var layerWhitener =
-        if (conf.whiten(0)) {
+        if (conf.whiten.contains(0)) {
           if (conf.loadWhitener) {
             /* Only the first layer whitener can be read from disk */
             Some(loadWhitener(layerPatch, conf.modelDir))
@@ -107,9 +106,8 @@ object CKMDeepImageNet extends Serializable with Logging {
                                    sc,
                                    layerWhitener,
                                    conf.whitenerOffset,
-                                   1,
                                    conf.insanity,
-                                   conf.fastfood(0),
+                                   conf.fastfood.contains(0),
                                    layerStride)
       var layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
 
@@ -141,13 +139,13 @@ object CKMDeepImageNet extends Serializable with Logging {
 
       layerPatch = conf.patch_sizes(i)
       layerPool = conf.pool(i)
-      layerStride = conf.convStride(i)
+      layerStride = conf.convStride.getOrElse(i, 1)
       layerChannels = numChannels
       layerInputFeatures = layerChannels*layerPatch*layerPatch
       layerOutputFeatures = conf.filters(i)
 
       layerWhitener =
-        if (conf.whiten(i)) {
+        if (conf.whiten.contains(i)) {
           val layerPatchExtractor = new Windower(1, layerPatch)
             .andThen(ImageVectorizer.apply)
             .andThen(new Sampler(10000, conf.seed))
@@ -168,9 +166,8 @@ object CKMDeepImageNet extends Serializable with Logging {
             sc,
             layerWhitener,
             conf.whitenerOffset,
-            layerPool,
             conf.insanity,
-            conf.fastfood(i),
+            conf.fastfood.contains(i),
             layerStride)
 
           layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
@@ -207,7 +204,7 @@ object CKMDeepImageNet extends Serializable with Logging {
     println(s"FINISHED TRAIN CONVOLUTIONS in took ${timeElapsed(trainStart)} secs")
     if (conf.saveFeatures) {
       println("Saving TRAIN Features")
-     if (conf.float(conf.layers - 1)) {
+     if (conf.float.contains(conf.layers - 1)) {
      XTrain.zip(LabelExtractor(train)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
      s"${conf.featureDir}/ckn_${featureId}_train_features")
      } else {
@@ -221,7 +218,7 @@ object CKMDeepImageNet extends Serializable with Logging {
     XTest.count()
     println(s"FINISHED TEST CONVOLUTIONS in took ${timeElapsed(testStart)} secs")
     if (conf.saveFeatures) {
-      if (conf.float(conf.layers - 1)) {
+      if (conf.float.contains(conf.layers - 1)) {
         XTest.zip(LabelExtractor(test)).map(xy => xy._1.map(_.toFloat).toArray.mkString(",") + "," + xy._2).saveAsTextFile(
           s"${conf.featureDir}/ckn_${featureId}_test_features")
       } else {

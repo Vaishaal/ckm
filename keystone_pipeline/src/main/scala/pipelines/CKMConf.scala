@@ -7,10 +7,27 @@ class CKMConf {
   @BeanProperty var  mode: String = "scala"
   @BeanProperty var  seed: Int = 0
   @BeanProperty var  layers: Int = 1
+  /* Mandatory Architechture params must be layers long*/
   @BeanProperty var  filters: Array[Int] = Array(1)
   @BeanProperty var  bandwidth : Array[Double] = Array(1.8)
-  @BeanProperty var  convStride: Array[Int] = Array(1)
+  @BeanProperty var  pool: Array[Int] = Array(2)
   @BeanProperty var  patch_sizes: Array[Int] = Array(5)
+
+  /* Optional Bells and whistles */
+
+ /* Whether the output of this layer should be serialized as float */
+  @BeanProperty var  float: Array[Int] = Array()
+
+  /* Whether to use FWHT as opposed to regular matrix multiply */
+  @BeanProperty var  fastfood: Array[Int] = Array()
+
+  /* If stride is not provided default stride of 1 will be used */
+  @BeanProperty var  convStride: Map[Int, Int] = Map()
+
+  /* If stride is not provided default stride of poolSize will be used (for that layer) */
+ /* TODO: THIS IS IGNORED RIGHT NOW */
+  @BeanProperty var  poolStride: Array[Int] = Array(2)
+
   @BeanProperty var  loss: String = "WeightedLeastSquares"
   @BeanProperty var  reg: Double = 0.001
   @BeanProperty var  numClasses: Int = 1000
@@ -19,22 +36,18 @@ class CKMConf {
   @BeanProperty var  kernelGamma: Double = 5e-5
   @BeanProperty var  blockSize: Int = 4000
   @BeanProperty var  numIters: Int = 1
-  @BeanProperty var  whiten: Array[Boolean] = Array(false)
+  @BeanProperty var  whiten: Array[Int] = Array()
   @BeanProperty var  whitenerValue: Double =  0.1
   @BeanProperty var  whitenerOffset: Double = 0.001
   @BeanProperty var  solve: Boolean = true
-  @BeanProperty var  solver: String = "linear"
+  @BeanProperty var  solver: String = "BlockWeightedLeastSquares"
   @BeanProperty var  insanity: Boolean = false
   @BeanProperty var  saveFeatures: Boolean = false
-  @BeanProperty var  float: Array[Boolean] = Array(false, false, false, false)
   @BeanProperty var  saveModel: Boolean = false
-  @BeanProperty var  pool: Array[Int] = Array(2)
-  @BeanProperty var  poolStride: Array[Int] = Array(2)
   @BeanProperty var  checkpointDir: String = "/tmp/spark-checkpoint"
   @BeanProperty var  augment: Boolean = false
   @BeanProperty var  augmentPatchSize: Int = 24
   @BeanProperty var  augmentType: String = "random"
-  @BeanProperty var  fastfood: Array[Boolean] = Array(false, false, false, false)
   @BeanProperty var  featureDir: String = "/"
   @BeanProperty var  labelDir: String = "/"
   @BeanProperty var  modelDir: String = "/tmp"
@@ -60,9 +73,9 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1250
        conf.poolStride.mkString("-") + "_" +
        conf.filters.mkString("-")
      } else {
-       val fastFood = if (conf.fastfood.slice(0,conf.layers).reduce(_ || _)) "ff_" + conf.fastfood.slice(0, conf.layers).mkString("-") + "_"  else ""
+       val fastFood = if (conf.fastfood.slice(0,conf.layers).size != 0 ) "ff_" + conf.fastfood.slice(0, conf.layers).mkString("-") + "_"  else ""
        val augment = if (conf.augment) "Augment_" else ""
-       val float = if (conf.float.slice(0,conf.layers).reduce(_ || _)) "float_" + conf.float.slice(0, conf.layers).mkString("-") + "_"  else ""
+       val float = if (conf.float.slice(0,conf.layers).size != 0 ) "float_" + conf.float.slice(0, conf.layers).mkString("-") + "_"  else ""
        conf.seed + "_" +
        conf.dataset + "_" +
        conf.layers + "_" +

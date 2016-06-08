@@ -35,7 +35,6 @@ class CC(
     sc: SparkContext,
     whitener: Option[ZCAWhitener] = None,
     whitenerOffset: Double = 1e-12,
-    poolSize: Int = 1,
     insanity: Boolean = false,
     fastfood: Boolean = false,
     patchStride: Int = 1,
