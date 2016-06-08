@@ -25,30 +25,32 @@ class MyConvolver(
     imgHeight: Int,
     imgChannels: Int,
     whitener: Option[ZCAWhitener] = None,
-    normalizePatches: Boolean = true,
+    normalizePatches: Boolean = false,
     varConstant: Double = 10.0,
-    patchStride: Int = 1)
+    patchStride: Int = 1,
+    zeroPad: Boolean = false)
   extends Transformer[Image, Image] {
 
   val convSize = math.sqrt(filters.cols/imgChannels).toInt
   val convolutions = filters.t
 
-  val resWidth = (imgWidth - convSize + 1)
-  val resHeight = (imgHeight - convSize + 1)
+  val (resWidth, resHeight) = ((imgWidth - convSize + 1), (imgHeight - convSize + 1))
 
   override def apply(in: RDD[Image]): RDD[Image] = {
     in.mapPartitions(MyConvolver.convolvePartitions(_, resWidth, resHeight, imgChannels, convSize,
-      normalizePatches, whitener, convolutions, varConstant, patchStride))
+      normalizePatches, whitener, convolutions, varConstant, patchStride, zeroPad))
   }
 
   def apply(in: Image): Image = {
 
-    val outWidth = math.ceil(resWidth/patchStride).toInt
-    val outHeight = math.ceil(resWidth/patchStride).toInt
+    val padding = if (zeroPad) convSize/2 else 0
 
-    var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
+    val outWidth = math.ceil((resWidth)/patchStride).toInt + 2*padding
+    val outHeight = math.ceil((resWidth)/patchStride).toInt + 2*padding
+
+    var patchMat = DenseMatrix.zeros[Double](outWidth*outHeight, convSize*convSize*imgChannels)
     MyConvolver.convolve(in, patchMat, resWidth, resHeight,
-      imgChannels, convSize, normalizePatches, whitener, convolutions, varConstant, patchStride)
+      imgChannels, convSize, normalizePatches, whitener, convolutions, varConstant, patchStride, zeroPad)
   }
 }
 
@@ -142,19 +144,18 @@ object MyConvolver {
       whitener: Option[ZCAWhitener],
       convolutions: DenseMatrix[Double],
       varConstant: Double = 10.0,
-      patchStride: Int = 1): Image = {
+      patchStride: Int = 1,
+      zeroPad: Boolean = false): Image = {
 
 
-    val outWidth = math.ceil(resWidth/patchStride).toInt
-    val outHeight = math.ceil(resWidth/patchStride).toInt
     val imgMat = makePatches(img, patchMat, resWidth, resHeight, imgChannels, convSize,
-      normalizePatches, whitener, varConstant, patchStride)
+      patchStride, zeroPad)
 
     val convRes: DenseMatrix[Double] = imgMat * convolutions
 
     val res = new RowMajorArrayVectorizedImage(
       convRes.toArray,
-      ImageMetadata(outWidth, outHeight, convolutions.cols))
+      ImageMetadata(math.sqrt(patchMat.rows).toInt, math.sqrt(patchMat.rows).toInt, convolutions.cols))
 
     res
   }
@@ -172,24 +173,36 @@ object MyConvolver {
       resHeight: Int,
       imgChannels: Int,
       convSize: Int,
-      normalizePatches: Boolean,
-      whitener: Option[ZCAWhitener],
-      varConstant: Double,
-      patchStride: Int): DenseMatrix[Double] = {
+      patchStride: Int,
+      zeroPad: Boolean): DenseMatrix[Double] = {
     var x,y,chan,pox,poy,py,px = 0
+    println(zeroPad)
     poy = 0
+    val padding = if (zeroPad) convSize/2 else 0
     while (poy < convSize) {
       pox = 0
       while (pox < convSize) {
-        y = 0
-        while (y < resHeight) {
-          x = 0
-          while (x < resWidth) {
+        y = 0  - padding
+        while (y < resHeight + padding) {
+          x = 0 - padding
+          while (x < resWidth + padding) {
             chan = 0
             while (chan < imgChannels) {
+              val xNew = x + padding
+              val yNew = y + padding
               px = chan + pox*imgChannels + poy*imgChannels*convSize
-              py = math.ceil((x/patchStride + y*resWidth/(patchStride*patchStride))).toInt
-              patchMat(py, px) = img.get(x+pox, y+poy, chan)
+              py = math.ceil((xNew/patchStride + (yNew*(resWidth + 2*padding)/(patchStride*patchStride)))).toInt
+
+              val imx = x + pox
+              val imy = y + poy
+
+              if (imx >= img.metadata.xDim || imy >= img.metadata.yDim) {
+                patchMat(py, px) = 0.0
+              } else if (imx < 0 || imy < 0) {
+                patchMat(py, px) = 0.0
+              } else {
+                patchMat(py, px) = img.get(imx, imy, chan)
+              }
               chan+=1
             }
             x += patchStride
@@ -200,15 +213,7 @@ object MyConvolver {
       }
       poy+=1
     }
-
-    val patchMatN = if(normalizePatches) Stats.normalizeRows(patchMat, varConstant) else patchMat
-
-    val res = whitener match {
-      case None => patchMatN
-      case Some(whiteness) => patchMatN(*, ::) - whiteness.means
-    }
-
-    res
+    patchMat
   }
 
   def convolvePartitions(
@@ -221,13 +226,16 @@ object MyConvolver {
       whitener: Option[ZCAWhitener],
       convolutions: DenseMatrix[Double],
       varConstant: Double,
-      patchStride: Int): Iterator[Image] = {
+      patchStride: Int,
+      zeroPad: Boolean): Iterator[Image] = {
 
-    val outWidth = math.ceil(resWidth/patchStride).toInt
-    val outHeight = math.ceil(resWidth/patchStride).toInt
+    val padding = if (zeroPad) convSize/2 else 0
+
+    val outWidth = math.ceil(resWidth/patchStride).toInt + 2*padding
+    val outHeight = math.ceil(resWidth/patchStride).toInt + 2*padding
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
     imgs.map(convolve(_, patchMat, resWidth, resHeight, imgChannels, convSize, normalizePatches,
-      whitener, convolutions, varConstant, patchStride))
+      whitener, convolutions, varConstant, patchStride, zeroPad))
 
   }
 }

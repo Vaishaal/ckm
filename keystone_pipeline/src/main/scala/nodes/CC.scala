@@ -38,7 +38,9 @@ class CC(
     poolSize: Int = 1,
     insanity: Boolean = false,
     fastfood: Boolean = false,
-    patchStride: Int = 1)
+    patchStride: Int = 1,
+    zeroPad: Boolean = false
+    )
   extends Transformer[Image, Image] {
 
   val convSize = math.sqrt(numInputFeatures/imgChannels).toInt
@@ -66,21 +68,22 @@ class CC(
     println(s"First pixel ${in.take(1)(0).get(0,0,0)}")
 
     in.mapPartitions(CC.convolvePartitions(_, resWidth, resHeight, imgChannels, convSize,
-      whitener, whitenerOffset, numInputFeatures, numOutputFeatures, seed, bandwidth, insanity, fastfood, patchStride, accs))
+      whitener, whitenerOffset, numInputFeatures, numOutputFeatures, seed, bandwidth, insanity, fastfood, patchStride, accs, zeroPad))
   }
 
   def apply(in: Image): Image = {
+    val padding = if (zeroPad) convSize/2 else 0
     implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
     val gaussian = new Gaussian(0, 1)
     val uniform = new Uniform(0, 1)
     val convolutionsDouble = (DenseMatrix.rand(numOutputFeatures, numInputFeatures, gaussian) :* bandwidth).t
     val phaseDouble = DenseVector.rand(numOutputFeatures, uniform) :* (2*math.Pi)
-    val outWidth = math.ceil(resWidth/patchStride).toInt
-    val outHeight = math.ceil(resHeight/patchStride).toInt
+    val outWidth = math.ceil(resWidth/patchStride).toInt + 2*padding
+    val outHeight = math.ceil(resHeight/patchStride).toInt + 2*padding
 
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
     CC.convolve(in, patchMat, resWidth, resHeight,
-      imgChannels, convSize, whitener, whitenerOffset, convolutionsDouble.data, phaseDouble, insanity, None, numOutputFeatures, numInputFeatures, patchStride, accs)
+      imgChannels, convSize, whitener, whitenerOffset, convolutionsDouble.data, phaseDouble, insanity, None, numOutputFeatures, numInputFeatures, patchStride, accs, zeroPad)
   }
   }
 
@@ -137,11 +140,11 @@ object CC {
       out: Int,
       in: Int,
       patchStride: Int,
-      accs: List[Accumulator[Double]]
+      accs: List[Accumulator[Double]],
+      zeroPad: Boolean
       ): Image = {
     val makePatchesStart = System.nanoTime()
-    val imgMat = makePatches(img, patchMat, resWidth, resHeight, imgChannels, convSize,
-      whitener, patchStride)
+    val imgMat = MyConvolver.makePatches(img, patchMat, resWidth, resHeight, imgChannels, convSize, patchStride, zeroPad)
     accs(0) += timeElapsed(makePatchesStart)
 
 
@@ -252,54 +255,6 @@ def l2Normalize(X: DenseMatrix[Double], offset: Double): DenseVector[Double] =  
 
 def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
 
-  /**
-   * This function takes an image and generates a matrix of all of its patches. Patches are expected to have indexes
-   * of the form: c + x*numChannels + y*numChannels*xDim
-   *
-   * @param img
-   * @return
-   */
-  def makePatches(img: Image,
-      patchMat: DenseMatrix[Double],
-      resWidth: Int,
-      resHeight: Int,
-      imgChannels: Int,
-      convSize: Int,
-      whitener: Option[ZCAWhitener],
-      patchStride: Int): DenseMatrix[Double] = {
-    var x,y,chan,pox,poy,py,px = 0
-    println("PATCHMAT ROWS: " + patchMat.rows)
-    println("PATCHMAT COLS: " + patchMat.cols)
-    println("RES WIDTH: " + resWidth)
-    println("RES HEIGHT: " + resHeight)
-
-    poy = 0
-    while (poy < convSize) {
-      pox = 0
-      while (pox < convSize) {
-        y = 0
-        while (y < resHeight) {
-          x = 0
-          while (x < resWidth) {
-            chan = 0
-            while (chan < imgChannels) {
-              px = chan + pox*imgChannels + poy*imgChannels*convSize
-              py = x/patchStride + y*resWidth/(patchStride*patchStride)
-              patchMat(py, px) = img.get(x+pox, y+poy, chan)
-              chan+=1
-            }
-            x += patchStride
-          }
-          y += patchStride
-        }
-        pox+=1
-      }
-      poy+=1
-    }
-
-    patchMat
-  }
-
   def convolvePartitions(
       imgs: Iterator[Image],
       resWidth: Int,
@@ -315,11 +270,12 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
       insanity: Boolean,
       fastfood: Boolean,
       patchStride: Int,
-      accs: List[Accumulator[Double]]
+      accs: List[Accumulator[Double]],
+      zeroPad: Boolean
       ): Iterator[Image] = {
-
-    val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt
-    val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt
+    val padding = if (zeroPad) convSize/2 else 0
+    val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt + padding
+    val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt + padding
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
       implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
     val gaussian = new Gaussian(0, 1)
@@ -340,6 +296,6 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
         None
       }
     imgs.map(convolve(_, patchMat, resWidth, resHeight, imgChannels, convSize,
-      whitener, whitenerOffset, convolutions, phase, insanity, ff, numOutputFeatures, numInputFeatures, patchStride, accs))
+      whitener, whitenerOffset, convolutions, phase, insanity, ff, numOutputFeatures, numInputFeatures, patchStride, accs, zeroPad))
   }
 }

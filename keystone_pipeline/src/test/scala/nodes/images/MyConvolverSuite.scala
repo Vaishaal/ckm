@@ -85,4 +85,44 @@ class MyConvolverSuite extends FunSuite with LocalSparkContext with Logging {
     assert(poolImage.metadata.numChannels == convBank.rows, "Convolved image should have the right num channels.")
     assert(poolImage.equals(convolvedImg), "Convolved image should match theano convolution")
   }
+
+  test("5x5 patches convolutions with zero padding") {
+    val imgWidth = 256
+    val imgHeight = 256
+    val imgChannels = 3
+    val numFilters = 2
+    val convSize = 5
+
+    val imageBGR  = TestUtils.loadTestImage("images/test.jpeg")
+
+    val imArray = imageBGR.toArray
+
+    val imArrayRGB  = TestUtils.BGRtoRGB(new DenseMatrix(3, 256*256, imArray)).data
+
+    val image = new ChannelMajorArrayVectorizedImage(imArrayRGB, imageBGR.metadata)
+
+    val theanoFile = new File(TestUtils.getTestResourceFileName("theano_conv2d_zeropad.csv"))
+
+    val convolvedImgRaw:Array[Double] = csvread(theanoFile).data
+
+    val convolvedImg = new ColumnMajorArrayVectorizedImage(convolvedImgRaw, ImageMetadata(imgWidth, imgHeight, numFilters))
+
+    val convBank = DenseMatrix.ones[Double](2, 5*5*3)
+
+    val convolver = new MyConvolver(convBank, imgWidth, imgHeight, imgChannels, zeroPad=true)
+
+    val poolImage = convolver(image)
+
+    logInfo(s"Image Dimensions ${poolImage.metadata.xDim} ${poolImage.metadata.yDim} ${poolImage.metadata.numChannels}")
+
+
+    assert(poolImage.metadata.xDim == (image.metadata.xDim), "Convolved image should have the right xDims.")
+    assert(poolImage.metadata.yDim == (image.metadata.yDim), "Convolved image should have the right yDims.")
+    assert(poolImage.metadata.numChannels == convBank.rows, "Convolved image should have the right num channels.")
+
+    val poolArray = poolImage.toArray
+    val imageArray = convolvedImg.toArray
+
+    assert(poolImage.equals(convolvedImg), "Convolved image should match theano convolution")
+  }
 }
