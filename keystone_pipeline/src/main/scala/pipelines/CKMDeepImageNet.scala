@@ -76,6 +76,7 @@ object CKMDeepImageNet extends Serializable with Logging {
       var layerChannels = numChannels
       var layerInputFeatures = numChannels*layerPatch*layerPatch
       var layerOutputFeatures = conf.filters(0)
+      var layerZeropad = conf.zeroPad.contains(0)
       var layerWhitener =
         if (conf.whiten.contains(0)) {
           if (conf.loadWhitener) {
@@ -108,7 +109,8 @@ object CKMDeepImageNet extends Serializable with Logging {
                                    conf.whitenerOffset,
                                    conf.insanity,
                                    conf.fastfood.contains(0),
-                                   layerStride)
+                                   layerStride,
+                                   layerZeropad)
       var layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
 
       var layer =
@@ -144,6 +146,7 @@ object CKMDeepImageNet extends Serializable with Logging {
       layerChannels = numChannels
       layerInputFeatures = layerChannels*layerPatch*layerPatch
       layerOutputFeatures = conf.filters(i)
+      layerZeropad = conf.zeroPad.contains(i)
 
       layerWhitener =
         if (conf.whiten.contains(i)) {
@@ -169,7 +172,8 @@ object CKMDeepImageNet extends Serializable with Logging {
             conf.whitenerOffset,
             conf.insanity,
             conf.fastfood.contains(i),
-            layerStride)
+            layerStride,
+            layerZeropad)
 
           layerPooler = new MyPooler(layerPool, layerPool, identity, (x:DenseVector[Double]) => mean(x), sc)
           if (conf.pool(i) == 1) {

@@ -18,6 +18,9 @@ class CKMConf {
  /* Whether the output of this layer should be serialized as float */
   @BeanProperty var  float: Array[Int] = Array()
 
+ /* Whether this convolution layer should be zero padded*/
+  @BeanProperty var  zeroPad: Array[Int] = Array()
+
   /* Whether to use FWHT as opposed to regular matrix multiply */
   @BeanProperty var  fastfood: Array[Int] = Array()
 
@@ -73,14 +76,16 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1250
        conf.poolStride.mkString("-") + "_" +
        conf.filters.mkString("-")
      } else {
-       val fastFood = if (conf.fastfood.slice(0,conf.layers).size != 0 ) "ff_" + conf.fastfood.slice(0, conf.layers).mkString("-") + "_"  else ""
+       val fastFood = if (conf.fastfood.filter(_ <= conf.layers - 1).size != 0 ) "ff_" + conf.fastfood.filter(_ <= conf.layers - 1).mkString("-") + "_"  else ""
        val augment = if (conf.augment) "Augment_" else ""
-       val float = if (conf.float.slice(0,conf.layers).size != 0 ) "float_" + conf.float.slice(0, conf.layers).mkString("-") + "_"  else ""
+       val float = if (conf.float.filter(_ <= conf.layers - 1).size != 0 ) "ff_" + conf.float.filter(_ <= conf.layers - 1).mkString("-") + "_"  else ""
+       val zeroPad = if (conf.zeroPad.filter(_ <= conf.layers - 1).size != 0 ) "ff_" + conf.zeroPad.filter(_ <= conf.layers - 1).mkString("-") + "_"  else ""
        conf.seed + "_" +
        conf.dataset + "_" +
        conf.layers + "_" +
        float +
        fastFood +
+       zeroPad +
        augment +
        conf.patch_sizes.slice(0,conf.layers).mkString("-") + "_" +
        conf.convStride.slice(0,conf.layers).mkString("-") + "_" +

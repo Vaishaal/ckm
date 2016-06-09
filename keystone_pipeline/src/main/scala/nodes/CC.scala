@@ -275,8 +275,8 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
       zeroPad: Boolean
       ): Iterator[Image] = {
     val padding = if (zeroPad) convSize/2 else 0
-    val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt + padding
-    val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt + padding
+    val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt + padding*2
+    val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt + padding*2
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
       implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
     val gaussian = new Gaussian(0, 1)
