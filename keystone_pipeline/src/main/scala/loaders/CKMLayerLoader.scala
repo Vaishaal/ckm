@@ -31,9 +31,22 @@ object CKMLayerLoader {
   def computeLayerSpatialInfo(layer:Int, conf: CKMConf): (Int, Int, Int) = {
     var xDim = 256
     var yDim = 256
+    if (conf.dataset == "cifar") {
+      xDim = 32
+      yDim = 32
+    } else if (conf.dataset == "mnist") {
+      xDim = 28
+      yDim = 28
+    }
+
     for (i <- 0 until layer + 1) {
-        xDim = math.ceil(((xDim  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(0)).toInt
-        yDim = math.ceil(((yDim  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(0)).toInt
+        if (conf.zeroPad.contains(i)) {
+          xDim = math.ceil(((xDim) - conf.pool(i)/2.0)/conf.pool(0)).toInt
+          yDim = math.ceil(((yDim) - conf.pool(i)/2.0)/conf.pool(0)).toInt
+        } else {
+          xDim = math.ceil(((xDim  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(0)).toInt
+          yDim = math.ceil(((yDim  - conf.patch_sizes(i) + 1) - conf.pool(i)/2.0)/conf.poolStride(0)).toInt
+        }
     }
     val numChannels = conf.filters(layer)
     println(s"Info ${xDim}, ${yDim}, ${numChannels}")

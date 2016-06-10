@@ -76,10 +76,10 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1250
        conf.poolStride.mkString("-") + "_" +
        conf.filters.mkString("-")
      } else {
-       val fastFood = if (conf.fastfood.filter(_ <= conf.layers - 1).size != 0 ) "ff_" + conf.fastfood.filter(_ <= conf.layers - 1).mkString("-") + "_"  else ""
+       val fastFood = if (conf.fastfood.filter(_ < conf.layers).size != 0 ) "ff_" + conf.fastfood.filter(_ < conf.layers).mkString("-") + "_"  else ""
        val augment = if (conf.augment) "Augment_" else ""
-       val float = if (conf.float.filter(_ <= conf.layers - 1).size != 0 ) "ff_" + conf.float.filter(_ <= conf.layers - 1).mkString("-") + "_"  else ""
-       val zeroPad = if (conf.zeroPad.filter(_ <= conf.layers - 1).size != 0 ) "ff_" + conf.zeroPad.filter(_ <= conf.layers - 1).mkString("-") + "_"  else ""
+       val float = if (conf.float.filter(_ < conf.layers).size != 0 ) "ff_" + conf.float.filter(_ < conf.layers).mkString("-") + "_"  else ""
+       val zeroPad = if (conf.zeroPad.filter(_ < conf.layers).size != 0 ) "ff_" + conf.zeroPad.filter(_ < conf.layers).mkString("-") + "_"  else ""
        conf.seed + "_" +
        conf.dataset + "_" +
        conf.layers + "_" +
@@ -88,15 +88,16 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1250
        zeroPad +
        augment +
        conf.patch_sizes.slice(0,conf.layers).mkString("-") + "_" +
-       conf.convStride.slice(0,conf.layers).mkString("-") + "_" +
+       conf.convStride.keys.filter(_ < conf.layers).mkString("-") + "_" +
        conf.bandwidth.slice(0,conf.layers).mkString("-") + "_" +
        conf.pool.slice(0,conf.layers).mkString("-") + "_" +
-       conf.poolStride.slice(0,conf.layers).mkString("-") + "_" +
-       conf.filters.slice(0,conf.layers).mkString("-") + "_" + 
-       conf.whiten.slice(0,conf.layers).mkString("-")
+       conf.poolStride.filter(_ < conf.layers).mkString("-") + "_" +
+       conf.filters.slice(0,conf.layers).mkString("-") + "_" +
+       conf.whiten.filter(_ < conf.layers).mkString("-")
      }
 
      if(conf.hashFeatureId) {
+       println("HASHING FEATURE ID " + featureId)
        featureId.hashCode().toString()
      } else {
        featureId

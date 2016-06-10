@@ -43,10 +43,10 @@ class MyConvolver(
 
   def apply(in: Image): Image = {
 
-    val padding = if (zeroPad) convSize/2 else 0
+    val padding = if (zeroPad) convSize - 1  else 0
 
-    val outWidth = math.ceil((resWidth)/patchStride).toInt + 2*padding
-    val outHeight = math.ceil((resWidth)/patchStride).toInt + 2*padding
+    val outWidth = math.ceil((resWidth)/patchStride).toInt + padding
+    val outHeight = math.ceil((resWidth)/patchStride).toInt + padding
 
     var patchMat = DenseMatrix.zeros[Double](outWidth*outHeight, convSize*convSize*imgChannels)
     MyConvolver.convolve(in, patchMat, resWidth, resHeight,
@@ -179,19 +179,20 @@ object MyConvolver {
     println(zeroPad)
     poy = 0
     val padding = if (zeroPad) convSize/2 else 0
+    val even = if (convSize % 2 == 0) 1 else 0
     while (poy < convSize) {
       pox = 0
       while (pox < convSize) {
         y = 0  - padding
-        while (y < resHeight + padding) {
+        while (y < resHeight + padding - even) {
           x = 0 - padding
-          while (x < resWidth + padding) {
+          while (x < resWidth + padding - even) {
             chan = 0
             while (chan < imgChannels) {
               val xNew = x + padding
               val yNew = y + padding
               px = chan + pox*imgChannels + poy*imgChannels*convSize
-              py = math.ceil((xNew/patchStride + (yNew*(resWidth + 2*padding)/(patchStride*patchStride)))).toInt
+              py = math.ceil((xNew/patchStride + (yNew*(resWidth + (2*padding - even))/(patchStride*patchStride)))).toInt
 
               val imx = x + pox
               val imy = y + poy
@@ -229,10 +230,10 @@ object MyConvolver {
       patchStride: Int,
       zeroPad: Boolean): Iterator[Image] = {
 
-    val padding = if (zeroPad) convSize/2 else 0
+    val padding = if (zeroPad) convSize - 1  else 0
 
-    val outWidth = math.ceil(resWidth/patchStride).toInt + 2*padding
-    val outHeight = math.ceil(resWidth/patchStride).toInt + 2*padding
+    val outWidth = math.ceil(resWidth/patchStride).toInt + padding
+    val outHeight = math.ceil(resWidth/patchStride).toInt + padding
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
     imgs.map(convolve(_, patchMat, resWidth, resHeight, imgChannels, convSize, normalizePatches,
       whitener, convolutions, varConstant, patchStride, zeroPad))

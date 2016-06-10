@@ -44,6 +44,16 @@ object CKMDeepImageNet extends Serializable with Logging {
     var xDim = 256
     var yDim = 256
     var numChannels = 3
+
+
+    if (conf.dataset == "cifar") {
+      xDim = 32
+      yDim = 32
+    } else if (conf.dataset == "mnist") {
+      xDim = 28
+      yDim = 28
+    }
+
     println("LAYER TO LOAD " + conf.layerToLoad)
     println("LOAD LAYER " + conf.loadLayer)
     val (train, test, startLayer) =
@@ -58,13 +68,36 @@ object CKMDeepImageNet extends Serializable with Logging {
         conf.layers = numLayers
         (train, test, conf.layerToLoad)
       } else {
-        /* First load ze data */
-       val train = ImageNetLoader(sc, s"${conf.featureDir}/imagenet-train-brewed",
-         s"${conf.labelDir}/imagenet-labels").cache
+        if (conf.dataset == "imagenet") {
+          /* First load ze data */
+         val train = ImageNetLoader(sc, s"${conf.featureDir}/imagenet-train-brewed",
+           s"${conf.labelDir}/imagenet-labels").cache
 
-       val test = ImageNetLoader(sc, s"${conf.featureDir}/imagenet-validation-brewed",
-         s"${conf.labelDir}/imagenet-labels").cache
-       (train, test, 0)
+         val test = ImageNetLoader(sc, s"${conf.featureDir}/imagenet-validation-brewed",
+           s"${conf.labelDir}/imagenet-labels").cache
+         (train, test, 0)
+        } else if (conf.dataset == "mnist") {
+         println("LOADING MNIST")
+         val train = MnistLoader(sc, "/home/eecs/vaishaal/ckm/mldata/mnist", 100, "train").cache
+         val test = MnistLoader(sc, "/home/eecs/vaishaal/ckm/mldata/mnist", 100, "test").cache
+         xDim = 28
+         yDim = 28
+         numChannels = 1
+         (train, test, 0)
+        } else if (conf.dataset == "cifar") {
+         println("LOADING CIFAR")
+         val train = CifarLoader2(sc, "/home/eecs/vaishaal/ckm/mldata/cifar/cifar_train.bin").cache
+         val test = CifarLoader2(sc, "/home/eecs/vaishaal/ckm/mldata/cifar/cifar_test.bin").cache
+         xDim = 32
+         yDim = 32
+         numChannels = 3
+          train.checkpoint()
+          test.checkpoint()
+         (train, test, 0)
+        } else {
+          throw new IllegalArgumentException("Unknown Dataset");
+        }
+
       }
       /* Layer 1
        * 11 x 11 patches, stride of 4, pool by 4
@@ -81,7 +114,7 @@ object CKMDeepImageNet extends Serializable with Logging {
         if (conf.whiten.contains(0)) {
           if (conf.loadWhitener) {
             /* Only the first layer whitener can be read from disk */
-            Some(loadWhitener(layerPatch, conf.modelDir))
+            Some(loadWhitener(layerPatch, conf.modelDir, conf.dataset))
           } else {
             val layerPatchExtractor = new Windower(1, layerPatch)
               .andThen(ImageVectorizer.apply)
@@ -90,8 +123,8 @@ object CKMDeepImageNet extends Serializable with Logging {
               println("Whitening Layer 1")
               val layerWhitener = Some(new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(layerSamples))
               val whitener = layerWhitener.get
-              breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
-              breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
+              breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.dataset}_${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
+              breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.dataset}_${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
               layerWhitener
           }
       } else {
@@ -124,6 +157,7 @@ object CKMDeepImageNet extends Serializable with Logging {
             xDim = math.ceil((cOutWidth/layerStride - layerPool/2.0)/layerPool).toInt
             yDim = math.ceil((cOutHeight/layerStride - layerPool/2.0)/layerPool).toInt
           }
+          numChannels = conf.filters(0)
           ImageExtractor andThen layerConvolver andThen layerPooler
       } else {
           val metadata = train.first.image.metadata
@@ -159,7 +193,7 @@ object CKMDeepImageNet extends Serializable with Logging {
           } else {
             None
           }
-
+          println(s"LAYER ${i} Fastfood: ${conf.fastfood.contains(i)}")
           layerConvolver = new CC(layerInputFeatures,
             layerOutputFeatures,
             conf.seed,
@@ -234,16 +268,18 @@ object CKMDeepImageNet extends Serializable with Logging {
         s"${conf.featureDir}/ckn_${featureId}_test_features")
       }
     }
-    println("FIRST 4 FEATURES" + XTrain.take(4).map(_.slice(0,4)).mkString("\n"))
     println("Feature Dim: " + XTrain.first.size)
 
 
+      if (conf.solve) {
 
+      println("FIRST 4 FEATURES" + XTrain.take(4).map(_.slice(0,4)).mkString("\n"))
       val labelVectorizer = ClassLabelIndicatorsFromIntLabels(conf.numClasses)
       val yTrain = labelVectorizer(LabelExtractor(train))
       val yTest = labelVectorizer(LabelExtractor(test))
 
       val zippedTrain = XTrain.zip(yTrain).coalesce(sc.defaultParallelism)
+
       val model = 
       if (conf.solverWeight == 0) {
         new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
@@ -280,12 +316,13 @@ object CKMDeepImageNet extends Serializable with Logging {
 
       val top1TestPredicted = TopKClassifier(1)(testPredictions)
       println("Top 1 test acc is " + (100 - Stats.getErrPercent(top1TestPredicted, top1TestActual, testPredictions.count())) + "%")
+      }
 
   }
 
-  def loadWhitener(patchSize: Double, modelDir: String): ZCAWhitener = {
-    val matrixPath = s"${modelDir}/${patchSize.toInt}.whitener.matrix"
-    val meansPath = s"${modelDir}/${patchSize.toInt}.whitener.means"
+  def loadWhitener(patchSize: Double, modelDir: String, dataset: String): ZCAWhitener = {
+    val matrixPath = s"${modelDir}/${dataset}_${patchSize.toInt}.whitener.matrix"
+    val meansPath = s"${modelDir}/${dataset}_${patchSize.toInt}.whitener.means"
     val whitenerVector = loadDenseVector(matrixPath)
     val whitenSize = math.sqrt(whitenerVector.size).toInt
     val whitener = whitenerVector.toDenseMatrix.reshape(whitenSize, whitenSize)
@@ -322,6 +359,7 @@ object CKMDeepImageNet extends Serializable with Logging {
       val featureId = CKMConf.genFeatureId(appConfig, appConfig.seed < CKMConf.LEGACY_CUTOFF)
       conf.setAppName(featureId)
       val sc = new SparkContext(conf)
+      sc.setCheckpointDir(appConfig.checkpointDir)
       run(sc, appConfig)
       sc.stop()
     }

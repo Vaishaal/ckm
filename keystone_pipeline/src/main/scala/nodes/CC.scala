@@ -47,10 +47,10 @@ class CC(
   val resWidth = imgWidth - convSize + 1
   val resHeight = imgHeight - convSize + 1
 
-  val padding = if (zeroPad) convSize/2 else 0
+  val padding = if (zeroPad) convSize - 1 else 0
 
-  val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt + padding*2
-  val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt + padding*2
+  val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt + padding
+  val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt + padding
 
   val make_patches_accum = sc.accumulator(0.0, "Make patches:")
   val norm_accum = sc.accumulator(0.0, "Norm")
@@ -73,14 +73,14 @@ class CC(
   }
 
   def apply(in: Image): Image = {
-    val padding = if (zeroPad) convSize/2 else 0
     implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
     val gaussian = new Gaussian(0, 1)
     val uniform = new Uniform(0, 1)
     val convolutionsDouble = (DenseMatrix.rand(numOutputFeatures, numInputFeatures, gaussian) :* bandwidth).t
     val phaseDouble = DenseVector.rand(numOutputFeatures, uniform) :* (2*math.Pi)
-    val outWidth = math.ceil(resWidth/patchStride).toInt + 2*padding
-    val outHeight = math.ceil(resHeight/patchStride).toInt + 2*padding
+    val outWidth = math.ceil(resWidth/patchStride).toInt + (convSize - 1)
+
+    val outHeight = math.ceil(resHeight/patchStride).toInt + (convSize - 1)
 
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
     CC.convolve(in, patchMat, resWidth, resHeight,
@@ -206,6 +206,7 @@ object CC {
       convRes
 
     val imCreateStart = System.nanoTime()
+    println("CONV RES SIZE " + convRes.size)
     val res = new RowMajorArrayVectorizedImage(
       convRes.data,
       ImageMetadata(outWidth, outHeight, out))
@@ -274,9 +275,10 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
       accs: List[Accumulator[Double]],
       zeroPad: Boolean
       ): Iterator[Image] = {
-    val padding = if (zeroPad) convSize/2 else 0
-    val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt + padding*2
-    val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt + padding*2
+    val padding = if (zeroPad) convSize - 1 else 0
+
+    val outWidth = math.ceil(resWidth/patchStride.toFloat).toInt + padding
+    val outHeight = math.ceil(resHeight/patchStride.toFloat).toInt + padding
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
       implicit val randBasis: RandBasis = new RandBasis(new ThreadLocalRandomGenerator(new MersenneTwister(seed)))
     val gaussian = new Gaussian(0, 1)
