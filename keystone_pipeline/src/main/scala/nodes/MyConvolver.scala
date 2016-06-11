@@ -179,7 +179,7 @@ object MyConvolver {
     println(zeroPad)
     poy = 0
     val padding = if (zeroPad) convSize/2 else 0
-    val even = if (convSize % 2 == 0) 1 else 0
+    val even = if (zeroPad && convSize % 2 == 0) 1 else 0
     while (poy < convSize) {
       pox = 0
       while (pox < convSize) {

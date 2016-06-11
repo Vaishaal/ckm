@@ -148,9 +148,10 @@ object CC {
     val imgMat = MyConvolver.makePatches(img, patchMat, resWidth, resHeight, imgChannels, convSize, patchStride, zeroPad)
     accs(0) += timeElapsed(makePatchesStart)
 
+    val padding = if (zeroPad) convSize - 1  else 0
 
-    val outWidth = math.ceil(resWidth/patchStride).toInt
-    val outHeight = math.ceil(resHeight/patchStride).toInt
+    val outWidth = math.ceil(resWidth/patchStride).toInt + padding
+    val outHeight = math.ceil(resHeight/patchStride).toInt + padding
 
     val whiteningStart = System.nanoTime()
     var whitenedImage: DenseMatrix[Double] =
