@@ -98,7 +98,7 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1250
 
      if(conf.hashFeatureId) {
        println("HASHING FEATURE ID " + featureId)
-       featureId.hashCode().toString()
+       Math.abs(featureId.hashCode()).toString()
      } else {
        featureId
      }
