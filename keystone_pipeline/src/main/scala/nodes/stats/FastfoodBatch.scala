@@ -34,7 +34,17 @@ class FastfoodBatch(
   val S = (DenseVector.rand(out, ChiSquared(out)) :^ 0.5) :*  1.0/norm(g)
   println("CREATING FASTFOOD NODE")
 
-  override def apply(in: DenseMatrix[Double]): DenseMatrix[Double] =  {
+  override def apply(inRaw: DenseMatrix[Double]): DenseMatrix[Double] =  {
+
+    val in =
+    if (!FWHT.isPower2(inRaw.cols)) {
+      val inPad = DenseMatrix.zeros[Double](inRaw.rows, FWHT.nextPower2(inRaw.cols).toInt)
+      inPad(::, 0 until inRaw.cols) := inRaw
+      inPad
+    } else {
+      inRaw
+    }
+
     assert(FWHT.isPower2(in.cols))
     /*  Since we need to do FWHT over each patch we should first convert the data such that each patch is contigious in memory (a column since breeze is column major */
     val patchMatrixCols = in.t.toArray
