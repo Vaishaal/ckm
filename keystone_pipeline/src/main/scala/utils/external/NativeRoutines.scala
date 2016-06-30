@@ -30,4 +30,16 @@ class NativeRoutines extends Serializable {
 
   @native
   def cosine(in: Float) : Float
+
+  @native
+  def NewDualLeastSquaresEstimator(n: Int, k: Int, d: Int, lambda: Double): Long
+
+  @native
+  def DeleteDualLeastSquaresEstimator(ptr: Long): Unit
+
+  @native
+  def DualLeastSquaresEstimatorAccumulateGram(ptr: Long, data: Array[Double]): Unit
+
+  @native
+  def DualLeastSquaresEstimatorSolve(ptr: Long, labels: Array[Double]): Array[Double]
 }

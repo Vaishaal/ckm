@@ -174,3 +174,96 @@ JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_poolAndRectify
   free(patch);
   return result;
 }
+
+
+struct DualLeastSquaresEstimator
+{
+  MatrixXd K;
+  MatrixXd model;
+  int numExamples;
+  int numClasses;
+  int dim;
+  DualLeastSquaresEstimator(int n, int d, int k, double lambda);
+  ~DualLeastSquaresEstimator(void);
+  template <typename Derived>
+  void AccumulateGram(const MatrixBase<Derived>& X);
+  template <typename Derived>
+  void solve(const MatrixBase<Derived>& y);
+};
+
+typedef struct DualLeastSquaresEstimator DualLeastSquaresEstimator;
+
+/* n is number of data points, k is number of classes */
+
+DualLeastSquaresEstimator::DualLeastSquaresEstimator(int n, int d, int k, double reg)
+{
+  /* Initialize empty gram matrix */
+  K = reg * MatrixXd::Identity(n,n);
+
+  numExamples = n;
+  dim = d;
+  numClasses = k;
+
+  /* Initialize empty model */
+  model = MatrixXd::Zero(n, k);
+}
+
+template <typename Derived>
+void DualLeastSquaresEstimator::AccumulateGram(const MatrixBase<Derived>& X) {
+  K += X * X.transpose();
+}
+
+template <typename Derived>
+void DualLeastSquaresEstimator::solve(const MatrixBase<Derived>& y) {
+  model = K.colPivHouseholderQr().solve(y);
+}
+
+JNIEXPORT uint64_t JNICALL Java_utils_external_NativeRoutines_NewDualLeastSquaresEstimator(
+    JNIEnv* env,
+    jobject obj,
+    jint n,
+    jint k,
+    jint d,
+    jdouble lambda)
+{
+  DualLeastSquaresEstimator *est =  new DualLeastSquaresEstimator(n, d, k, lambda);
+  return (uint64_t) est;
+}
+
+JNIEXPORT void JNICALL Java_utils_external_NativeRoutines_DeleteDualLeastSquaresEstimator(
+    JNIEnv* env,
+    jobject obj,
+    uint64_t ptr)
+{
+  DualLeastSquaresEstimator *est = (DualLeastSquaresEstimator *) ptr;
+  delete est;
+}
+
+JNIEXPORT void JNICALL Java_utils_external_NativeRoutines_DualLeastSquaresEstimatorAccumulateGram(
+    JNIEnv* env,
+    jobject obj,
+    uint64_t ptr,
+    jdoubleArray data)
+{
+  DualLeastSquaresEstimator *est = (DualLeastSquaresEstimator *) ptr;
+  jdouble* Xraw = env->GetDoubleArrayElements(data, 0);
+  Map< Matrix<double, Dynamic, Dynamic> > X(Xraw, est->numExamples, est->dim);
+  est->AccumulateGram(X);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_DualLeastSquaresEstimatorSolve(
+    JNIEnv* env,
+    jobject obj,
+    uint64_t ptr,
+    jdoubleArray labels)
+{
+  DualLeastSquaresEstimator *est = (DualLeastSquaresEstimator *) ptr;
+  jdouble* Yraw = env->GetDoubleArrayElements(labels, 0);
+  Map< Matrix<double, Dynamic, Dynamic> > Y(Yraw, est->numExamples, est->numClasses);
+  est->solve(Y);
+  int modelSize = est->numClasses*est->numExamples;
+  jdoubleArray model = env->NewDoubleArray(modelSize);
+  env->SetDoubleArrayRegion(model, 0, modelSize, est->model.data());
+  return model;
+}
+
