@@ -1,7 +1,7 @@
 package pipelines
 import scala.reflect.{BeanProperty, ClassTag}
 
-class CKMConf {
+class CKMConf extends Serializable {
   @BeanProperty var  dataset: String = "imagenet-small"
   @BeanProperty var  expid: String = "imagenet-small-run"
   @BeanProperty var  mode: String = "scala"
@@ -27,9 +27,13 @@ class CKMConf {
   /* If stride is not provided default stride of 1 will be used */
   @BeanProperty var  convStride: Map[Int, Int] = Map()
 
+  @BeanProperty var  preProcess: Boolean = false
+
   /* If stride is not provided default stride of poolSize will be used (for that layer) */
  /* TODO: THIS IS IGNORED RIGHT NOW */
   @BeanProperty var  poolStride: Array[Int] = Array(2)
+
+  @BeanProperty var  nonLinearity: String = "cosine"
 
   @BeanProperty var  loss: String = "WeightedLeastSquares"
   @BeanProperty var  reg: Double = 0.001
@@ -43,7 +47,8 @@ class CKMConf {
   @BeanProperty var  whitenerValue: Double =  0.1
   @BeanProperty var  whitenerOffset: Double = 0.001
   @BeanProperty var  solve: Boolean = true
-  @BeanProperty var  solver: String = "BlockWeightedLeastSquares"
+  @BeanProperty var  sampleCov: Boolean = false
+  @BeanProperty var  solver: String = "ls"
   @BeanProperty var  insanity: Boolean = false
   @BeanProperty var  saveFeatures: Boolean = false
   @BeanProperty var  saveModel: Boolean = false
@@ -51,12 +56,15 @@ class CKMConf {
   @BeanProperty var  augment: Boolean = false
   @BeanProperty var  augmentPatchSize: Int = 24
   @BeanProperty var  augmentType: String = "random"
+  @BeanProperty var  filterLoc: String = ""
   @BeanProperty var  featureDir: String = "/"
   @BeanProperty var  labelDir: String = "/"
   @BeanProperty var  modelDir: String = "/tmp"
   @BeanProperty var  loadWhitener: Boolean = false
+  @BeanProperty var  loadFilters: Boolean = false
   @BeanProperty var  loadLayer: Boolean = false
   @BeanProperty var  hashFeatureId: Boolean = false
+  @BeanProperty var  ben: Boolean = false
   @BeanProperty var  layerToLoad: Int = 0
 }
 
@@ -80,23 +88,31 @@ object CKMConf { val LEGACY_CUTOFF: Int = 1250
        val augment = if (conf.augment) "Augment_" else ""
        val float = if (conf.float.filter(_ < conf.layers).size != 0 ) "ff_" + conf.float.filter(_ < conf.layers).mkString("-") + "_"  else ""
        val zeroPad = if (conf.zeroPad.filter(_ < conf.layers).size != 0 ) "ff_" + conf.zeroPad.filter(_ < conf.layers).mkString("-") + "_"  else ""
+       val sampleCov = if (conf.sampleCov) "sampleCov_" else ""
+       val ben = if (conf.ben) "_ben_" else ""
+       ben +
        conf.seed + "_" +
        conf.dataset + "_" +
        conf.layers + "_" +
+       sampleCov +
        float +
        fastFood +
        zeroPad +
        augment +
+       conf.nonLinearity + "_" +
        conf.patch_sizes.slice(0,conf.layers).mkString("-") + "_" +
        conf.convStride.keys.filter(_ < conf.layers).mkString("-") + "_" +
        conf.bandwidth.slice(0,conf.layers).mkString("-") + "_" +
        conf.pool.slice(0,conf.layers).mkString("-") + "_" +
        conf.poolStride.filter(_ < conf.layers).mkString("-") + "_" +
        conf.filters.slice(0,conf.layers).mkString("-") + "_" +
-       conf.whiten.filter(_ < conf.layers).mkString("-")
-     }
+       conf.whiten.filter(_ < conf.layers).mkString("-") + "_"
 
+     }
      if(conf.hashFeatureId) {
+       println("CONF BEN " + conf.ben)
+       println("CONF BEN " + conf.ben)
+       println("legacy " + legacy)
        println("HASHING FEATURE ID " + featureId)
        Math.abs(featureId.hashCode()).toString()
      } else {
