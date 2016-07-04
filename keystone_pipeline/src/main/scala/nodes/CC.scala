@@ -38,7 +38,8 @@ class CC(
     insanity: Boolean = false,
     fastfood: Boolean = false,
     patchStride: Int = 1,
-    zeroPad: Boolean = false
+    zeroPad: Boolean = false,
+    normalize: Boolean = true
     )
   extends Transformer[Image, Image] {
 
@@ -69,7 +70,7 @@ class CC(
     println(s"First pixel ${in.take(1)(0).get(0,0,0)}")
 
     in.mapPartitions(CC.convolvePartitions(_, resWidth, resHeight, imgChannels, convSize,
-      whitener, whitenerOffset, numInputFeatures, numOutputFeatures, seed, bandwidth, insanity, fastfood, patchStride, accs, zeroPad))
+      whitener, whitenerOffset, numInputFeatures, numOutputFeatures, seed, bandwidth, insanity, fastfood, patchStride, accs, zeroPad, normalize))
   }
 
   def apply(in: Image): Image = {
@@ -84,7 +85,7 @@ class CC(
 
     var patchMat = new DenseMatrix[Double](outWidth*outHeight, convSize*convSize*imgChannels)
     CC.convolve(in, patchMat, resWidth, resHeight,
-      imgChannels, convSize, whitener, whitenerOffset, convolutionsDouble.data, phaseDouble, insanity, None, numOutputFeatures, numInputFeatures, patchStride, accs, zeroPad)
+      imgChannels, convSize, whitener, whitenerOffset, convolutionsDouble.data, phaseDouble, insanity, None, numOutputFeatures, numInputFeatures, patchStride, accs, zeroPad, normalize)
   }
   }
 
@@ -142,7 +143,8 @@ object CC {
       in: Int,
       patchStride: Int,
       accs: List[Accumulator[Double]],
-      zeroPad: Boolean
+      zeroPad: Boolean,
+      normalize: Boolean
       ): Image = {
     val makePatchesStart = System.nanoTime()
     val imgMat = MyConvolver.makePatches(img, patchMat, resWidth, resHeight, imgChannels, convSize, patchStride, zeroPad)
@@ -169,7 +171,12 @@ object CC {
     accs(1) += timeElapsed(whiteningStart)
 
     val normStart = System.nanoTime()
-    val patchNorms = l2Normalize(whitenedImage, whitenerOffset)
+    val patchNorms =
+      if (normalize) {
+        l2Normalize(whitenedImage, whitenerOffset)
+      } else {
+        DenseVector.ones[Double](whitenedImage.rows)
+      }
 
     accs(2) += timeElapsed(normStart)
     var convRes:DenseMatrix[Double] =
@@ -274,7 +281,8 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
       fastfood: Boolean,
       patchStride: Int,
       accs: List[Accumulator[Double]],
-      zeroPad: Boolean
+      zeroPad: Boolean,
+      normalize: Boolean
       ): Iterator[Image] = {
     val padding = if (zeroPad) convSize - 1 else 0
 
@@ -300,6 +308,6 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
         None
       }
     imgs.map(convolve(_, patchMat, resWidth, resHeight, imgChannels, convSize,
-      whitener, whitenerOffset, convolutions, phase, insanity, ff, numOutputFeatures, numInputFeatures, patchStride, accs, zeroPad))
+      whitener, whitenerOffset, convolutions, phase, insanity, ff, numOutputFeatures, numInputFeatures, patchStride, accs, zeroPad, normalize))
   }
 }

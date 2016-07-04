@@ -182,17 +182,7 @@ object CKMDeepImageNet extends Serializable with Logging {
       layerOutputFeatures = conf.filters(i)
       layerZeropad = conf.zeroPad.contains(i)
 
-      layerWhitener =
-        if (conf.whiten.contains(i)) {
-          val layerPatchExtractor = new Windower(1, layerPatch)
-            .andThen(ImageVectorizer.apply)
-            .andThen(new Sampler(10000, conf.seed))
-            val layerSamples = MatrixUtils.rowsToMatrix(layerPatchExtractor(layer(train)))
-            println("Whitening Layer " + (i+1))
-            Some(new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(layerSamples))
-          } else {
-            None
-          }
+          layerWhitener = None
           println(s"LAYER ${i} Fastfood: ${conf.fastfood.contains(i)}")
           layerConvolver = new CC(layerInputFeatures,
             layerOutputFeatures,
@@ -234,8 +224,8 @@ object CKMDeepImageNet extends Serializable with Logging {
     val finalLayer = ImageVectorizer andThen new Cacher[DenseVector[Double]]
 
     val featurizer = layer andThen finalLayer
-    var XTrain = featurizer(train)
-    var XTest = featurizer(test)
+    var XTrain = featurizer(train).get()
+    var XTest = featurizer(test).get()
 
 
     train.count()
