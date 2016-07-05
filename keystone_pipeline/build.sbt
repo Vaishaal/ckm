@@ -25,16 +25,29 @@ libraryDependencies ++= Seq(
   // It depends on LGPL code.
   "org.scalanlp" %% "breeze-viz" % "0.11.2",
   "io.scif" % "scifio" % "0.27.0",
-  "gov.nasa.gsfc.heasarc" % "nom-tam-fits" % "1.14.0-SNAPSHOT",
-  "net.imagej" % "imagej" % "2.0.0-rc-42" exclude("io.scif", "scifio"),
-  "com.google.protobuf" % "protobuf-java" % "2.4.1",
   "net.jafama" % "jafama" % "2.1.0"
 )
 
+libraryDependencies ++= Seq(
+  "edu.arizona.sista" % "processors" % "3.0" exclude("ch.qos.logback", "logback-classic"),
+  "edu.arizona.sista" % "processors" % "3.0" classifier "models",
+  "org.slf4j" % "slf4j-api" % "1.7.2",
+  "org.slf4j" % "slf4j-log4j12" % "1.7.2",
+  "org.scalatest" %% "scalatest" % "1.9.1" % "test",
+  "org.mockito" % "mockito-core" % "1.8.5",
+  "org.apache.commons" % "commons-compress" % "1.7",
+  "commons-io" % "commons-io" % "2.4",
+  "org.scalanlp" % "breeze_2.10" % "0.11.2",
+  "com.google.guava" % "guava" % "14.0.1",
+  "com.github.fommil.netlib" % "all" % "1.1.2" pomOnly(),
+  "com.github.scopt" %% "scopt" % "3.3.0"
+)
 
+
+fork := true
 
 {
-  val defaultSparkVersion = "1.5.0-cdh5.5.1"
+  val defaultSparkVersion = "1.5.2"
   val sparkVersion =
     scala.util.Properties.envOrElse("SPARK_VERSION", defaultSparkVersion)
   val excludeHadoop = ExclusionRule(organization = "org.apache.hadoop")

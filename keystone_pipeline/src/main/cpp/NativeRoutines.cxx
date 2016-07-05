@@ -197,8 +197,12 @@ typedef struct DualLeastSquaresEstimator DualLeastSquaresEstimator;
 
 DualLeastSquaresEstimator::DualLeastSquaresEstimator(int n, int d, int k, double reg)
 {
+
+  printf("POTATO\n");
   /* Initialize empty gram matrix */
-  K = reg * MatrixXd::Identity(n,n);
+  K = MatrixXd::Zeros(n,n);
+
+  printf("FIRST kernel element %f\n", K(0,0));
 
   numExamples = n;
   dim = d;
@@ -210,15 +214,24 @@ DualLeastSquaresEstimator::DualLeastSquaresEstimator(int n, int d, int k, double
 
 template <typename Derived>
 void DualLeastSquaresEstimator::AccumulateGram(const MatrixBase<Derived>& X) {
-  K += X * X.transpose();
+  printf("XXT COMPUTATION \n ");
+  auto Kadd = X * X.transpose();
+  K += Kadd;
+  printf("XXT COMPUTATION END \n ");
 }
 
 template <typename Derived>
 void DualLeastSquaresEstimator::solve(const MatrixBase<Derived>& y) {
+  printf("SOLVING in JNI\n");
   model = K.colPivHouseholderQr().solve(y);
+  printf("Kernel dimensions: rows: %d, cols: %d\n", K.rows(), K.cols());
+  printf("Label dimensions: rows: %d, cols: %d\n", y.rows(), y.cols());
+  MatrixXd ypred = K * model;
+  printf("JNI FIRST PREDICTION %f\n", ypred(0));
+  fflush(stdout);
 }
 
-JNIEXPORT uint64_t JNICALL Java_utils_external_NativeRoutines_NewDualLeastSquaresEstimator(
+JNIEXPORT jlong JNICALL Java_utils_external_NativeRoutines_NewDualLeastSquaresEstimator(
     JNIEnv* env,
     jobject obj,
     jint n,
@@ -226,8 +239,11 @@ JNIEXPORT uint64_t JNICALL Java_utils_external_NativeRoutines_NewDualLeastSquare
     jint d,
     jdouble lambda)
 {
+  printf("Creating empty gram matrix \n");
   DualLeastSquaresEstimator *est =  new DualLeastSquaresEstimator(n, d, k, lambda);
-  return (uint64_t) est;
+  printf("EST pointer: %p\n", est);
+  fflush(stdout);
+  return (jlong) est;
 }
 
 JNIEXPORT void JNICALL Java_utils_external_NativeRoutines_DeleteDualLeastSquaresEstimator(
@@ -242,24 +258,30 @@ JNIEXPORT void JNICALL Java_utils_external_NativeRoutines_DeleteDualLeastSquares
 JNIEXPORT void JNICALL Java_utils_external_NativeRoutines_DualLeastSquaresEstimatorAccumulateGram(
     JNIEnv* env,
     jobject obj,
-    uint64_t ptr,
+    jlong ptr,
     jdoubleArray data)
 {
+  printf("ACCUMULATING GRAM in JNI \n");
   DualLeastSquaresEstimator *est = (DualLeastSquaresEstimator *) ptr;
+  printf("EST pointer: %p\n", est);
   jdouble* Xraw = env->GetDoubleArrayElements(data, 0);
   Map< Matrix<double, Dynamic, Dynamic> > X(Xraw, est->numExamples, est->dim);
   est->AccumulateGram(X);
+  printf("FIRST kernel element after accumulate %f\n", est->K(0,0));
+  fflush(stdout);
 }
 
 JNIEXPORT jdoubleArray JNICALL Java_utils_external_NativeRoutines_DualLeastSquaresEstimatorSolve(
     JNIEnv* env,
     jobject obj,
-    uint64_t ptr,
+    jlong ptr,
     jdoubleArray labels)
 {
   DualLeastSquaresEstimator *est = (DualLeastSquaresEstimator *) ptr;
   jdouble* Yraw = env->GetDoubleArrayElements(labels, 0);
   Map< Matrix<double, Dynamic, Dynamic> > Y(Yraw, est->numExamples, est->numClasses);
+  printf("RIGHT BEFORE SOLVE CALL TO EIGEN\n");
+  fflush(stdout);
   est->solve(Y);
   int modelSize = est->numClasses*est->numExamples;
   jdoubleArray model = env->NewDoubleArray(modelSize);

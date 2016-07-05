@@ -5,7 +5,7 @@ import workflow.{WeightedNode, LabelEstimator}
 
 import scala.collection.mutable.ArrayBuffer
 
-import breeze.linalg._
+import breeze.linalg.{Transpose => _, _}
 import breeze.numerics._
 import breeze.math._
 import breeze.stats._
@@ -31,15 +31,19 @@ import utils.external.NativeRoutines
 class DualLeastSquaresModel(model: DenseMatrix[Double], train: RDD[DenseVector[Double]])
   extends Transformer[DenseVector[Double], DenseVector[Double]] {
 
-    val d = train.first.size
+    /* KLUDGE */
+    override def apply(test: RDD[DenseVector[Double]]) = {
+      val testLocal = test.collect()
+      test.context.parallelize(testLocal.map(apply(_)))
+    }
+
     override def apply(test: DenseVector[Double]) = {
-      val testX  = new DenseVector(train.map(x => x.t * test).collect())
-      testX :/= (1.0*d)
-      model * testX
+      val t = new DenseVector(train.map(test.t * _).collect())
+      model.t * t
     }
   }
 
-class LocalDualLeastSquaresEstimator(lambda: Double, blockSize: Int)
+class LocalDualLeastSquaresEstimator(blockSize: Int, lambda: Double)
   extends LabelEstimator[DenseVector[Double], DenseVector[Double], DenseVector[Double]] {
 
   @transient lazy val extLib = new NativeRoutines()
@@ -59,15 +63,13 @@ class LocalDualLeastSquaresEstimator(lambda: Double, blockSize: Int)
       trainingFeatures: RDD[DenseVector[Double]],
       trainingLabels: RDD[DenseVector[Double]]
       ): DualLeastSquaresModel = {
-        val d = trainingFeatures.first.size
         val n = trainingFeatures.count().toInt
+        val d = trainingFeatures.first.size
         val k = trainingLabels.first.size
         val y = MatrixUtils.rowsToMatrix(trainingLabels.collect())
 
-        /* Create the C++ object */
         ptr = extLib.NewDualLeastSquaresEstimator(n, k, d, lambda)
 
-        /* Accumulate the gram matrix in pieces */
         accumulateGram(trainingFeatures)
 
         println("EIGEN SOLVE START ")
@@ -89,8 +91,11 @@ class LocalDualLeastSquaresEstimator(lambda: Double, blockSize: Int)
       while (i < d) {
         println(s"Block ${block}")
         block += 1
-        val X:DenseMatrix[Double] = MatrixUtils.rowsToMatrix(trainingFeatures.map(x => x(i until i+blockSize)).collect())
+        val XB = trainingFeatures.map(x => x(i until i+blockSize))
+        val X:DenseMatrix[Double] = MatrixUtils.rowsToMatrix(XB.collect())
+        println("X Collected")
         extLib.DualLeastSquaresEstimatorAccumulateGram(ptr, X.data)
+        i += blockSize;
       }
       println(s"Gram matrix accumulation took ${timeElapsed(gramStart)} secs")
   }

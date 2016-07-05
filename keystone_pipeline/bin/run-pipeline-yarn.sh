@@ -17,7 +17,7 @@ if [ -z "$1" ]; then
 fi
 
 if [ -z "$OMP_NUM_THREADS" ]; then
-    export OMP_NUM_THREADS=1 # added as we were nondeterministically running into an openblas race condition 
+    export OMP_NUM_THREADS=1 added as we were nondeterministically running into an openblas race condition 
 fi
 
 
@@ -36,7 +36,7 @@ export KEYSTONE_MEM
 spark-submit \
   --master yarn\
   --class $CLASS \
-  --num-executors 22 \
+  --num-executors  12 \
   --executor-cores 24 \
   --driver-class-path $JARFILE:$ASSEMBLYJAR:$HOME/hadoop/conf \
   --driver-library-path /opt/amp/gcc/lib64:/opt/amp/openblas/lib:$FWDIR/lib \
