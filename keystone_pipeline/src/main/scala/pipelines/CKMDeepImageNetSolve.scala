@@ -48,13 +48,20 @@ object CKMDeepImageNetSolve extends Serializable with Logging {
     val yTest = labelVectorizer(featurized.yTest)
     val XTrain = featurized.XTrain
     val XTest = featurized.XTest
+    val n = XTrain.count()
+    val d = XTrain.first.size
+    var lambda = conf.reg * 1.0/(n) * sum(XTrain.map(x => x :* x ).reduce(_ :+ _))
+    lambda = conf.reg
     println("FIRST 4 FEATURES" + XTrain.take(4).map(_.slice(0,4)).mkString("\n"))
     println("Feature Dim: " + XTrain.first.size)
+    println("LAMBDA " + lambda)
     val model =
-    if (conf.solverWeight == 0) {
-      new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
+    if (conf.solver == "ls") {
+      new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, lambda).fit(XTrain, yTrain)
+    } else if (conf.solver == "wls") {
+      new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, lambda, conf.solverWeight).fit(XTrain, yTrain)
     } else {
-      new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
+      throw new IllegalArgumentException("Unknown Solver")
     }
 
     println("Training finish!")

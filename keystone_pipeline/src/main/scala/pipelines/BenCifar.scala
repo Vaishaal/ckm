@@ -61,7 +61,7 @@ object BenCifar  extends Serializable with Logging {
     val featurizer =
         new Convolver(filters, imageSize, imageSize, numChannels, None, false) andThen
         new SymmetricRectifier(alpha=alphaVal) andThen
-        new MyPooler(conf.pool(0) - 1, conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc) andThen
+        new MyPooler(conf.poolStride(0), conf.pool(0), identity, (x:DenseVector[Double]) => mean(x), sc) andThen
         ImageVectorizer andThen
         new Cacher[DenseVector[Double]]
 
@@ -97,7 +97,7 @@ object BenCifar  extends Serializable with Logging {
       var lambda = conf.reg * 1.0/(d) * sum(XTrain.map(x => x :* x ).reduce(_ :+ _))
       lambda = conf.reg
       println("LAMBDA IS " + lambda)
-      val model = new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, lambda).fit(XTrain, yTrain)
+      val model = new LocalDualLeastSquaresEstimator(conf.blockSize, lambda).fit(XTrain, yTrain)
 
       println("Training finish!")
       val trainPredictions = model.apply(XTrain).cache()
