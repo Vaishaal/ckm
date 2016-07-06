@@ -198,11 +198,8 @@ typedef struct DualLeastSquaresEstimator DualLeastSquaresEstimator;
 DualLeastSquaresEstimator::DualLeastSquaresEstimator(int n, int d, int k, double reg)
 {
 
-  printf("POTATO\n");
   /* Initialize empty gram matrix */
-  K = MatrixXd::Zeros(n,n);
-
-  printf("FIRST kernel element %f\n", K(0,0));
+  K = reg * MatrixXd::Identity(n,n);
 
   numExamples = n;
   dim = d;
@@ -223,7 +220,7 @@ void DualLeastSquaresEstimator::AccumulateGram(const MatrixBase<Derived>& X) {
 template <typename Derived>
 void DualLeastSquaresEstimator::solve(const MatrixBase<Derived>& y) {
   printf("SOLVING in JNI\n");
-  model = K.colPivHouseholderQr().solve(y);
+  model = K.ldlt().solve(y);
   printf("Kernel dimensions: rows: %d, cols: %d\n", K.rows(), K.cols());
   printf("Label dimensions: rows: %d, cols: %d\n", y.rows(), y.cols());
   MatrixXd ypred = K * model;

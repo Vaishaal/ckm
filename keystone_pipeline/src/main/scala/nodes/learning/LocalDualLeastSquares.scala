@@ -30,11 +30,11 @@ import utils.external.NativeRoutines
 
 class DualLeastSquaresModel(model: DenseMatrix[Double], train: RDD[DenseVector[Double]])
   extends Transformer[DenseVector[Double], DenseVector[Double]] {
-
+    val C = model
+    println(s"DUAL MODEL  ${C.rows} x ${C.cols}")
     /* KLUDGE */
     override def apply(test: RDD[DenseVector[Double]]) = {
-      val testLocal = test.collect()
-      test.context.parallelize(testLocal.map(apply(_)))
+      test
     }
 
     override def apply(test: DenseVector[Double]) = {

@@ -294,7 +294,15 @@ def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
     val uniform = new Uniform(0, 1)
     val convolutions =
     if (!fastfood) {
-      (DenseMatrix.rand(numOutputFeatures, numInputFeatures, gaussian) :* bandwidth).data
+      val W = DenseMatrix.rand(numOutputFeatures, numInputFeatures, gaussian)
+      /* TODO: KLUDGE */
+      val X = whitener.map(_.samples).getOrElse(DenseMatrix.eye[Double](108) :* bandwidth)
+      val means = whitener.map(_.means).getOrElse(DenseVector.zeros[Double](108))
+      var covMatrix = convert(convert(1.0/X.rows * X.t * X, Float), Double) - means * means.t
+
+      val covMatrixRoot = cholesky(covMatrix)
+      val filters = (W * covMatrixRoot.t)
+      filters.data
     } else {
       DenseVector.rand(numOutputFeatures, gaussian).data
     }
