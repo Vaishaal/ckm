@@ -13,14 +13,9 @@ CC = g++
 UNAME := $(shell uname -sm)
 
 Darwin_x86_64_CFLAGS := -O3
-Linux_x86_64_CFLAGS := -O3 -fPIC -fopenmp -shared -march=native -std=c++0x -pedantic -Wall -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes -mavx -g3
+Linux_x86_64_CFLAGS := -O3 -fPIC -fopenmp -march=native -shared -std=c++0x -pedantic -Wall -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes -mavx -g3 -larmadillo
 
 CFLAGS ?= $($(shell echo "$(UNAME)" | tr \  _)_CFLAGS)
-
-# Set arch for VLFeat
-
-Darwin_x86_64_ARCH := maci64
-Linux_x86_64_ARCH := glnxa64
 
 # Set dynamic lib extension for architecture
 Darwin_x86_64_EXT := dylib

@@ -45,10 +45,16 @@ if [ ! -f ${JAR} ]; then
 fi
 printf "Launching sbt from ${JAR}\n"
 
+export OMP_NUM_THREADS=48
+
 FWDIR="$(cd `dirname $0`/..; pwd)"
+echo "LIBRARY PATH"
+echo $LD_LIBRARY_PATH
 
 java \
   -Djava.library.path="$FWDIR/lib" \
-  -Xmx5400m -XX:MaxPermSize=350m -XX:ReservedCodeCacheSize=256m \
+  -Xmx45400m  -XX:ReservedCodeCacheSize=256m \
+  -Xss10m \
+  -XX:+UseSerialGC \
   -jar ${JAR} \
   "$@"

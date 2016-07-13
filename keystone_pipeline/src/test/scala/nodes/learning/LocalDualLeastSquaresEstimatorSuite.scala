@@ -25,12 +25,11 @@ import org.apache.log4j.Logger
 class LocalDualLeastSquaresEstimatorSuite extends FunSuite with Logging with PipelineContext {
 
   test("Local Dual Least Squares Solver should match primal") {
-    val n = 50000
-    val d = 1024
+    val n = 5000
+    val d = 500 
     val k = 10
     val lambda = 0.1
     val seed = 0
-
     val conf = new SparkConf().setAppName("LocalDualLeastSquaresEstimatorSuite")
     Logger.getLogger("org").setLevel(Level.WARN)
     Logger.getLogger("akka").setLevel(Level.WARN)
@@ -53,22 +52,24 @@ class LocalDualLeastSquaresEstimatorSuite extends FunSuite with Logging with Pip
    data.count()
    labels.count()
 
-   /*
-   val primalSolver = new BlockLeastSquaresEstimator(d, 1, 0.0)
-   val primalModel = primalSolver.fit(data, labels)
-   val primalPredictions = MaxClassifier(primalModel.apply(data)).collect()
-   */
-
    val dualSolver = new LocalDualLeastSquaresEstimator(d, lambda)
    val dualModel = dualSolver.fit(data, labels).C
 
+   println(s"Starting netlib crap")
    val X = MatrixUtils.rowsToMatrix(data.collect())
+   val XXT = X * X.t
    val K = X * X.t + (lambda * DenseMatrix.eye[Double](n))
    val XTX = X.t * X + (lambda * DenseMatrix.eye[Double](d))
    val y = MatrixUtils.rowsToMatrix(labels.collect())
 
+   val solveStart = System.nanoTime()
    val dualModelScala = K \  y
+   println(s"scala Solve took ${timeElapsed(solveStart)} secs")
    val model =  XTX \ (X.t * y)
+
+
+
+
 
    val yPredDual = argmax((X * X.t)  * dualModelScala, Axis._1)
    val yPred = argmax(X * model, Axis._1)
@@ -81,4 +82,5 @@ class LocalDualLeastSquaresEstimatorSuite extends FunSuite with Logging with Pip
 
    sc.stop()
   }
+def timeElapsed(ns: Long) : Double = (System.nanoTime - ns).toDouble / 1e9
 }
