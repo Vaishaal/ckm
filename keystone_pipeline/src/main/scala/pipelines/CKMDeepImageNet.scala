@@ -94,10 +94,20 @@ object CKMDeepImageNet extends Serializable with Logging {
           train.checkpoint()
           test.checkpoint()
          (train, test, 0)
+        } else if (conf.dataset == "cifar-whitened") {
+         println("LOADING CIFAR-WHITENED")
+         val data = CifarWhitenedLoader(sc, "/user/vaishaal/cifar_whitened")
+         val train = data.train
+         val test = data.test
+         xDim = 32
+         yDim = 32
+         numChannels = 3
+          train.checkpoint()
+          test.checkpoint()
+         (train, test, 0)
         } else {
           throw new IllegalArgumentException("Unknown Dataset");
         }
-
       }
       /* Layer 1
        * 11 x 11 patches, stride of 4, pool by 4
@@ -118,10 +128,11 @@ object CKMDeepImageNet extends Serializable with Logging {
           } else {
             val layerPatchExtractor = new Windower(1, layerPatch)
               .andThen(ImageVectorizer.apply)
-              .andThen(new Sampler(10000, conf.seed))
+              .andThen(new Sampler(100000, conf.seed))
               val layerSamples = MatrixUtils.rowsToMatrix(layerPatchExtractor(train.map(_.image)))
+
               println("Whitening Layer 1")
-              val layerWhitener = Some(new ZCAWhitenerEstimator(conf.whitenerValue).fitSingle(layerSamples))
+              val layerWhitener = Some(new ZCAWhitenerEstimator2(conf.whitenerValue).fitSingle(layerSamples))
               val whitener = layerWhitener.get
               breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.dataset}_${conf.patch_sizes(0).toInt}.whitener.matrix"),whitener.whitener, separator = ',')
               breeze.linalg.csvwrite(new File(s"${conf.modelDir}/${conf.dataset}_${conf.patch_sizes(0).toInt}.whitener.means"),whitener.means.toDenseMatrix, separator = ',')
@@ -270,9 +281,13 @@ object CKMDeepImageNet extends Serializable with Logging {
 
       val zippedTrain = XTrain.zip(yTrain).coalesce(sc.defaultParallelism)
 
+      val n = XTrain.count()
+      val d = XTrain.first.size
+      var lambda = conf.reg * (1.0/d) * sum(XTrain.map(x => x :* x ).reduce(_ :+ _))
+      println("LAMBDA IS " + lambda)
       val model = 
       if (conf.solverWeight == 0) {
-        new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg).fit(XTrain, yTrain)
+        new BlockLeastSquaresEstimator(conf.blockSize, conf.numIters, lambda).fit(XTrain, yTrain)
       } else {
         new BlockWeightedLeastSquaresEstimator(conf.blockSize, conf.numIters, conf.reg, conf.solverWeight).fit(XTrain, yTrain)
       }
@@ -317,7 +332,7 @@ object CKMDeepImageNet extends Serializable with Logging {
     val whitenSize = math.sqrt(whitenerVector.size).toInt
     val whitener = whitenerVector.toDenseMatrix.reshape(whitenSize, whitenSize)
     val means = loadDenseVector(meansPath)
-    new ZCAWhitener(whitener, means)
+    new ZCAWhitener(whitener, means, DenseMatrix.zeros[Double](means.size, means.size))
   }
 
   def loadDenseVector(path: String): DenseVector[Double] = {

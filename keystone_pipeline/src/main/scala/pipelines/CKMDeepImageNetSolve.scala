@@ -103,7 +103,7 @@ object CKMDeepImageNetSolve extends Serializable with Logging {
     val whitenSize = math.sqrt(whitenerVector.size).toInt
     val whitener = whitenerVector.toDenseMatrix.reshape(whitenSize, whitenSize)
     val means = loadDenseVector(meansPath)
-    new ZCAWhitener(whitener, means)
+    new ZCAWhitener(whitener, means, DenseMatrix.zeros[Double](means.size, means.size))
   }
 
   def loadDenseVector(path: String): DenseVector[Double] = {
